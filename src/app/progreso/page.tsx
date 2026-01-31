@@ -381,6 +381,17 @@ export default function ProgresoPage() {
                     );
                   })}
                 </div>
+
+                {/* Gráfica de Línea de Fuerza */}
+                {progresoEjercicio.length >= 2 && (
+                  <div className="mt-6 pt-6 border-t border-white/10">
+                    <h3 className="text-sm font-medium text-gray-400 mb-3 flex items-center gap-2">
+                      <TrendingUp className="w-4 h-4" />
+                      Curva de Progresión
+                    </h3>
+                    <GraficaFuerza datos={progresoEjercicio} />
+                  </div>
+                )}
               </>
             )}
           </div>
@@ -518,6 +529,174 @@ function ComparativaCard({
           <span>{cambio > 0 ? '+' : ''}{cambio}%</span>
         </div>
       )}
+    </div>
+  );
+}
+
+// Gráfica de línea SVG para progresión de fuerza
+function GraficaFuerza({ datos }: { datos: ProgresoEjercicio[] }) {
+  if (datos.length < 2) return null;
+
+  const ultimos = datos.slice(-15); // Últimos 15 registros
+  const pesos = ultimos.map(d => d.peso);
+  const minPeso = Math.min(...pesos) * 0.9;
+  const maxPeso = Math.max(...pesos) * 1.1;
+  const rangoY = maxPeso - minPeso;
+
+  const width = 100;
+  const height = 50;
+  const padding = 2;
+
+  // Generar puntos para la línea
+  const puntos = ultimos.map((d, i) => {
+    const x = padding + (i / (ultimos.length - 1)) * (width - padding * 2);
+    const y = height - padding - ((d.peso - minPeso) / rangoY) * (height - padding * 2);
+    return { x, y, peso: d.peso, fecha: d.fecha };
+  });
+
+  // Crear path de la línea
+  const linePath = puntos.map((p, i) => 
+    `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`
+  ).join(' ');
+
+  // Crear path del área bajo la curva
+  const areaPath = `${linePath} L ${puntos[puntos.length - 1].x} ${height - padding} L ${puntos[0].x} ${height - padding} Z`;
+
+  // Calcular línea de tendencia (regresión lineal simple)
+  const n = ultimos.length;
+  const sumX = ultimos.reduce((acc, _, i) => acc + i, 0);
+  const sumY = ultimos.reduce((acc, d) => acc + d.peso, 0);
+  const sumXY = ultimos.reduce((acc, d, i) => acc + i * d.peso, 0);
+  const sumX2 = ultimos.reduce((acc, _, i) => acc + i * i, 0);
+  
+  const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+  const intercept = (sumY - slope * sumX) / n;
+  
+  const trendStart = intercept;
+  const trendEnd = slope * (n - 1) + intercept;
+  
+  const trendY1 = height - padding - ((trendStart - minPeso) / rangoY) * (height - padding * 2);
+  const trendY2 = height - padding - ((trendEnd - minPeso) / rangoY) * (height - padding * 2);
+
+  const tendenciaPositiva = slope > 0;
+  const cambioTotal = ((pesos[pesos.length - 1] - pesos[0]) / pesos[0] * 100).toFixed(1);
+
+  return (
+    <div className="space-y-2">
+      {/* Info de tendencia */}
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-gray-500">
+          {ultimos[0].fecha} → {ultimos[ultimos.length - 1].fecha}
+        </span>
+        <span className={`font-medium ${tendenciaPositiva ? 'text-green-400' : 'text-red-400'}`}>
+          {tendenciaPositiva ? '📈' : '📉'} {tendenciaPositiva ? '+' : ''}{cambioTotal}%
+        </span>
+      </div>
+
+      {/* Gráfica SVG */}
+      <div className="relative bg-gym-dark rounded-lg p-4 border border-white/5">
+        <svg 
+          viewBox={`0 0 ${width} ${height}`} 
+          className="w-full h-32"
+          preserveAspectRatio="none"
+        >
+          {/* Grid horizontal */}
+          {[0.25, 0.5, 0.75].map(pct => (
+            <line
+              key={pct}
+              x1={padding}
+              y1={height * pct}
+              x2={width - padding}
+              y2={height * pct}
+              stroke="rgba(255,255,255,0.05)"
+              strokeDasharray="2,2"
+            />
+          ))}
+
+          {/* Área bajo la curva */}
+          <path
+            d={areaPath}
+            fill="url(#areaGradient)"
+            opacity="0.3"
+          />
+
+          {/* Línea de tendencia */}
+          <line
+            x1={padding}
+            y1={trendY1}
+            x2={width - padding}
+            y2={trendY2}
+            stroke={tendenciaPositiva ? '#22c55e' : '#ef4444'}
+            strokeWidth="0.5"
+            strokeDasharray="3,3"
+            opacity="0.7"
+          />
+
+          {/* Línea principal */}
+          <path
+            d={linePath}
+            fill="none"
+            stroke="url(#lineGradient)"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+
+          {/* Puntos */}
+          {puntos.map((p, i) => (
+            <g key={i} className="group">
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r="1.5"
+                fill="#a855f7"
+                stroke="#1a1a2e"
+                strokeWidth="0.5"
+                className="transition-all hover:r-3"
+              />
+              {/* Tooltip */}
+              <title>{p.peso}kg - {p.fecha}</title>
+            </g>
+          ))}
+
+          {/* Gradientes */}
+          <defs>
+            <linearGradient id="lineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#a855f7" />
+              <stop offset="100%" stopColor="#06b6d4" />
+            </linearGradient>
+            <linearGradient id="areaGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+              <stop offset="0%" stopColor="#a855f7" stopOpacity="0.5" />
+              <stop offset="100%" stopColor="#a855f7" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+        </svg>
+
+        {/* Etiquetas Y */}
+        <div className="absolute left-0 top-4 bottom-4 flex flex-col justify-between text-[10px] text-gray-500 -ml-1">
+          <span>{Math.round(maxPeso)}kg</span>
+          <span>{Math.round((maxPeso + minPeso) / 2)}kg</span>
+          <span>{Math.round(minPeso)}kg</span>
+        </div>
+      </div>
+
+      {/* Resumen */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="bg-gym-dark/30 rounded p-2">
+          <div className="text-[10px] text-gray-500">Inicio</div>
+          <div className="text-sm font-medium text-white">{pesos[0]}kg</div>
+        </div>
+        <div className="bg-gym-dark/30 rounded p-2">
+          <div className="text-[10px] text-gray-500">Actual</div>
+          <div className="text-sm font-medium text-cyan-400">{pesos[pesos.length - 1]}kg</div>
+        </div>
+        <div className={`rounded p-2 ${tendenciaPositiva ? 'bg-green-500/10' : 'bg-red-500/10'}`}>
+          <div className="text-[10px] text-gray-500">Ganancia</div>
+          <div className={`text-sm font-medium ${tendenciaPositiva ? 'text-green-400' : 'text-red-400'}`}>
+            {tendenciaPositiva ? '+' : ''}{(pesos[pesos.length - 1] - pesos[0]).toFixed(1)}kg
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
