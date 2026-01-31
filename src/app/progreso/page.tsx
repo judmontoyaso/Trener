@@ -57,12 +57,14 @@ export default function ProgresoPage() {
     }
   }, [ejercicioSeleccionado]);
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
   async function cargarDatos() {
     try {
       const [volumenRes, gruposRes, frecuentesRes] = await Promise.all([
-        fetch("http://localhost:8000/api/progreso/volumen"),
-        fetch("http://localhost:8000/api/progreso/grupos"),
-        fetch("http://localhost:8000/api/progreso/ejercicios-frecuentes")
+        fetch(`${API_URL}/api/progreso/volumen`),
+        fetch(`${API_URL}/api/progreso/grupos`),
+        fetch(`${API_URL}/api/progreso/ejercicios-frecuentes`)
       ]);
 
       const volumenData = await volumenRes.json();
@@ -86,7 +88,7 @@ export default function ProgresoPage() {
 
   async function cargarProgresoEjercicio(nombre: string) {
     try {
-      const res = await fetch(`http://localhost:8000/api/progreso/ejercicio/${encodeURIComponent(nombre)}`);
+      const res = await fetch(`${API_URL}/api/progreso/ejercicio/${encodeURIComponent(nombre)}`);
       const data = await res.json();
       setProgresoEjercicio(data.progreso || []);
     } catch (error) {

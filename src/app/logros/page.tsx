@@ -41,11 +41,13 @@ export default function LogrosPage() {
     cargarDatos();
   }, []);
 
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
   async function cargarDatos() {
     try {
       const [perfilRes, logrosRes] = await Promise.all([
-        fetch("http://localhost:8000/api/gamificacion/perfil"),
-        fetch("http://localhost:8000/api/gamificacion/logros")
+        fetch(`${API_URL}/api/gamificacion/perfil`),
+        fetch(`${API_URL}/api/gamificacion/logros`)
       ]);
 
       const perfilData = await perfilRes.json();

@@ -14,17 +14,20 @@ load_dotenv()
 
 app = FastAPI(title="Trener API", description="API para gestionar entrenamientos de gimnasio")
 
-# CORS para permitir requests desde Next.js
+# CORS para permitir requests desde Next.js (local y producción)
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # MongoDB connection
-MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://dbbot:juan0521@cluster0.yrat3g7.mongodb.net/n8n_memoria?retryWrites=true&w=majority")
+MONGO_URI = os.getenv("MONGO_URI")
+if not MONGO_URI:
+    raise ValueError("MONGO_URI environment variable is required")
 client = MongoClient(MONGO_URI)
 db = client["n8n_memoria"]
 collection = db["gimnasio"]
