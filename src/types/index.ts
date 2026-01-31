@@ -4,18 +4,47 @@ export interface Ejercicio {
   series: number;
   repeticiones: number | number[];
   peso_kg: number | number[] | string;
+  completado?: boolean;
+  peso_realizado?: number[];
 }
 
 export interface Entrenamiento {
   _id?: {
     $oid: string;
-  };
+  } | string;
   id: string;
   nombre: string;
   tipo: 'push' | 'pull' | 'pierna' | 'hombro' | 'core' | string;
   fecha: string;
   grupos_musculares: string[];
   ejercicios: Ejercicio[];
+  notas?: string;
+  duracion_aprox_min?: number;
+}
+
+export interface EntrenamientoActivo extends Entrenamiento {
+  iniciado_en: string;
+  estado: 'en_progreso' | 'completado' | 'cancelado';
+  ejercicios_completados: EjercicioRealizado[];
+}
+
+export interface EjercicioRealizado {
+  nombre: string;
+  series_realizadas: SerieRealizada[];
+}
+
+export interface SerieRealizada {
+  numero: number;
+  peso_kg: number;
+  repeticiones: number;
+  completada: boolean;
+}
+
+export interface Equipamiento {
+  id: string;
+  nombre: string;
+  tipo: 'maquina' | 'libre' | 'cable' | 'barra' | 'mancuerna' | 'otro';
+  ejercicios_posibles: string[];
 }
 
 export interface GrupoMuscular {

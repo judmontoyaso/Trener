@@ -1,7 +1,7 @@
 'use client';
 
 import { Entrenamiento, GRUPOS_MUSCULARES } from '@/types';
-import { ChevronDown, ChevronUp, Weight, Repeat, Layers } from 'lucide-react';
+import { ChevronDown, ChevronUp, Weight, Repeat, Layers, MessageSquare, Clock } from 'lucide-react';
 import { useState } from 'react';
 import clsx from 'clsx';
 
@@ -51,7 +51,14 @@ export default function WorkoutCard({ entrenamiento }: WorkoutCardProps) {
     return `${reps}`;
   };
 
-  const fechaFormateada = new Date(entrenamiento.fecha).toLocaleDateString('es-ES', {
+  // Parsear fecha sin problema de zona horaria
+  // "2026-01-30" -> se interpreta como fecha local, no UTC
+  const parseFechaLocal = (fechaStr: string) => {
+    const [year, month, day] = fechaStr.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+
+  const fechaFormateada = parseFechaLocal(entrenamiento.fecha).toLocaleDateString('es-ES', {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
@@ -143,6 +150,25 @@ export default function WorkoutCard({ entrenamiento }: WorkoutCardProps) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Notas */}
+      {entrenamiento.notas && (
+        <div className="mt-3 p-3 bg-black/20 rounded-lg border border-white/5">
+          <div className="flex items-center gap-2 text-gray-400 text-xs mb-1">
+            <MessageSquare className="w-3 h-3" />
+            <span>Notas</span>
+          </div>
+          <p className="text-sm text-gray-300">{entrenamiento.notas}</p>
+        </div>
+      )}
+
+      {/* Duración */}
+      {entrenamiento.duracion_aprox_min && (
+        <div className="mt-2 flex items-center gap-1 text-xs text-gray-500">
+          <Clock className="w-3 h-3" />
+          <span>~{entrenamiento.duracion_aprox_min} min</span>
         </div>
       )}
     </div>

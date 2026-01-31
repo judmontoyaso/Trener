@@ -1,21 +1,42 @@
 'use client';
 
-import { Dumbbell, Calendar, BarChart3, Sparkles, Menu, X } from 'lucide-react';
+import { Dumbbell, Calendar, BarChart3, Sparkles, Menu, X, Play, TrendingUp, Trophy } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import clsx from 'clsx';
 
 const navItems = [
   { href: '/', label: 'Inicio', icon: BarChart3 },
   { href: '/entrenamientos', label: 'Entrenamientos', icon: Dumbbell },
   { href: '/calendario', label: 'Calendario', icon: Calendar },
-  { href: '/generar', label: 'Generar Rutina', icon: Sparkles },
+  { href: '/generar', label: 'Generar', icon: Sparkles },
+  { href: '/progreso', label: 'Progreso', icon: TrendingUp },
+  { href: '/logros', label: 'Logros', icon: Trophy },
 ];
 
 export default function Navbar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [hayEntrenamientoActivo, setHayEntrenamientoActivo] = useState(false);
+
+  useEffect(() => {
+    // Verificar si hay entrenamiento activo
+    const checkEntrenamientoActivo = async () => {
+      try {
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/entrenamiento-activo`);
+        const data = await response.json();
+        setHayEntrenamientoActivo(data.activo === true);
+      } catch {
+        setHayEntrenamientoActivo(false);
+      }
+    };
+    
+    checkEntrenamientoActivo();
+    // Verificar cada 30 segundos
+    const interval = setInterval(checkEntrenamientoActivo, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <nav className="bg-gym-dark/80 backdrop-blur-md border-b border-white/10 sticky top-0 z-50">
@@ -52,6 +73,17 @@ export default function Navbar() {
                 </Link>
               );
             })}
+            
+            {/* Botón de entrenamiento activo */}
+            {hayEntrenamientoActivo && (
+              <Link
+                href="/entrenamiento-activo"
+                className="flex items-center gap-2 px-4 py-2 ml-2 rounded-lg bg-gradient-to-r from-gym-green to-green-500 text-white animate-pulse"
+              >
+                <Play className="w-4 h-4" />
+                <span className="text-sm font-medium">En curso</span>
+              </Link>
+            )}
           </div>
 
           {/* Mobile menu button */}
