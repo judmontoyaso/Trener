@@ -1329,27 +1329,41 @@ def get_todos_1rm():
                 if not nombre or not peso or peso == "ajustar":
                     continue
                 
-                # Normalizar peso y reps
+                # Normalizar peso
                 if isinstance(peso, list):
                     peso = max(p for p in peso if isinstance(p, (int, float)))
+                if isinstance(peso, str):
+                    try:
+                        peso = float(peso)
+                    except:
+                        continue
+                if not isinstance(peso, (int, float)):
+                    continue
+                    
+                # Normalizar reps
                 if isinstance(reps, list):
-                    reps = min(reps)  # Usar el menor para ser conservador
-                if not isinstance(reps, int) or reps > 12:
+                    reps = min(r for r in reps if isinstance(r, (int, float)))
+                if isinstance(reps, str):
+                    try:
+                        reps = int(reps)
+                    except:
+                        continue
+                if not isinstance(reps, (int, float)) or reps > 12 or reps <= 0:
                     continue  # 1RM solo es preciso con menos de 12 reps
                 
-                rm = calcular_1rm(peso, reps)
+                rm = calcular_1rm(peso, int(reps))
                 
-                if nombre not in ejercicios_1rm or rm > ejercicios_1rm[nombre]["rm"]:
+                if nombre not in ejercicios_1rm or rm > ejercicios_1rm[nombre]["rm_estimado"]:
                     ejercicios_1rm[nombre] = {
                         "ejercicio": nombre,
-                        "rm": rm,
+                        "rm_estimado": rm,
                         "peso_usado": peso,
-                        "reps": reps,
+                        "repeticiones": int(reps),
                         "fecha": doc.get("fecha")
                     }
         
-        resultado = sorted(ejercicios_1rm.values(), key=lambda x: x["rm"], reverse=True)
-        return {"ejercicios": resultado}
+        resultado = sorted(ejercicios_1rm.values(), key=lambda x: x["rm_estimado"], reverse=True)
+        return {"estimaciones": resultado[:20]}  # Top 20
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1366,25 +1380,40 @@ def get_comparativa_semanal():
             "fecha": {"$gte": inicio_semana_pasada.isoformat()}
         }))
         
-        esta_semana = {"entrenamientos": 0, "series": 0, "volumen": 0}
-        semana_pasada = {"entrenamientos": 0, "series": 0, "volumen": 0}
+        esta_semana = {"entrenamientos": 0, "series": 0, "ejercicios": 0, "volumen": 0.0}
+        semana_pasada = {"entrenamientos": 0, "series": 0, "ejercicios": 0, "volumen": 0.0}
         
         for doc in docs:
             fecha = doc.get("fecha", "")
             datos = esta_semana if fecha >= inicio_esta_semana.isoformat() else semana_pasada
             
             datos["entrenamientos"] += 1
-            for ej in doc.get("ejercicios", []):
+            ejercicios = doc.get("ejercicios", [])
+            datos["ejercicios"] += len(ejercicios)
+            
+            for ej in ejercicios:
                 series = ej.get("series", 0)
-                datos["series"] += series
+                if isinstance(series, (int, float)):
+                    datos["series"] += int(series)
+                
                 peso = ej.get("peso_kg")
                 if peso and peso != "ajustar":
-                    if isinstance(peso, list):
-                        peso = sum(peso) / len(peso)
-                    reps = ej.get("repeticiones", 10)
-                    if isinstance(reps, list):
-                        reps = sum(reps) / len(reps)
-                    datos["volumen"] += series * reps * peso
+                    try:
+                        if isinstance(peso, list):
+                            peso = sum(p for p in peso if isinstance(p, (int, float))) / len([p for p in peso if isinstance(p, (int, float))])
+                        elif isinstance(peso, str):
+                            peso = float(peso)
+                        
+                        reps = ej.get("repeticiones", 10)
+                        if isinstance(reps, list):
+                            reps = sum(r for r in reps if isinstance(r, (int, float))) / max(len([r for r in reps if isinstance(r, (int, float))]), 1)
+                        elif isinstance(reps, str):
+                            reps = float(reps)
+                        
+                        if isinstance(peso, (int, float)) and isinstance(reps, (int, float)) and isinstance(series, (int, float)):
+                            datos["volumen"] += float(series) * float(reps) * float(peso)
+                    except:
+                        pass
         
         # Calcular porcentajes de cambio
         def calcular_cambio(actual, anterior):
@@ -1398,6 +1427,7 @@ def get_comparativa_semanal():
             "cambio": {
                 "entrenamientos": calcular_cambio(esta_semana["entrenamientos"], semana_pasada["entrenamientos"]),
                 "series": calcular_cambio(esta_semana["series"], semana_pasada["series"]),
+                "ejercicios": calcular_cambio(esta_semana["ejercicios"], semana_pasada["ejercicios"]),
                 "volumen": calcular_cambio(esta_semana["volumen"], semana_pasada["volumen"])
             }
         }
