@@ -14,15 +14,16 @@ load_dotenv()
 
 app = FastAPI(title="Trener API", description="API para gestionar entrenamientos de gimnasio")
 
-# CORS para permitir requests desde Next.js (local y producción)
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS - Deshabilitado porque nginx ya lo maneja en producción
+# Si corres localmente, descomenta esto:
+# CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=CORS_ORIGINS,
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # MongoDB connection
 MONGO_URI = os.getenv("MONGO_URI")
@@ -340,11 +341,19 @@ def generar_rutina(request: GenerarRutinaRequest):
             else f"Tipo: {request.tipo}"
         )
 
-        prompt = f"""Eres un entrenador personal experto. Genera una rutina de entrenamiento en JSON.
+        prompt = f"""Eres un entrenador personal experto en HIPERTROFIA MASCULINA. Genera una rutina de entrenamiento en JSON.
+
+PRINCIPIOS DE HIPERTROFIA (obligatorios):
+- Series: 3-5 por ejercicio
+- Repeticiones: 8-12 reps (zona óptima de hipertrofia)
+- Ejercicios compuestos primero, luego aislados
+- Volumen alto: mínimo 15-20 series por sesión
+- Incluir variedad de ángulos y agarres
+- Priorizar tensión mecánica y estrés metabólico
 
 Parámetros:
 - {grupos_texto}
-- Objetivo: {request.objetivo}
+- Objetivo: HIPERTROFIA / Aumento de masa muscular
 - Nivel: {request.nivel}
 - Duración: {request.duracion_minutos} minutos
 {f"- Notas: {request.notas}" if request.notas else ""}
@@ -362,7 +371,11 @@ Devuelve SOLO JSON válido:
   ]
 }}
 
-Incluye 6-8 ejercicios apropiados."""
+IMPORTANTE:
+- Incluye 6-8 ejercicios apropiados para HIPERTROFIA
+- Usa rangos de 8-12 repeticiones (hipertrofia)
+- 3-4 series por ejercicio como mínimo
+- Empieza con compuestos pesados, termina con aislados"""
 
         completion = openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -1252,10 +1265,10 @@ def get_progreso_grupos():
 
 
 @app.get("/api/progreso/ejercicios-frecuentes")
-def get_ejercicios_frecuentes():
-    """Obtener los ejercicios más frecuentes con sus stats"""
+def get_ejercicios_frecuentes(limit: int = 0):
+    """Obtener los ejercicios con sus stats. Si limit=0 devuelve todos."""
     try:
-        docs = list(collection.find({}))
+        docs = list(collection.find({}).sort("fecha", 1))
         
         ejercicios = {}
         
@@ -1271,15 +1284,23 @@ def get_ejercicios_frecuentes():
                         "veces": 0,
                         "pesos": [],
                         "ultimo_peso": None,
-                        "max_peso": 0
+                        "max_peso": 0,
+                        "primera_fecha": doc.get("fecha"),
+                        "ultima_fecha": doc.get("fecha")
                     }
                 
                 ejercicios[nombre]["veces"] += 1
+                ejercicios[nombre]["ultima_fecha"] = doc.get("fecha")
                 
                 peso = ej.get("peso_kg")
-                if peso and peso != "ajustar":
+                if peso and peso != "ajustar" and peso != "peso corporal":
                     if isinstance(peso, list):
-                        peso_val = max(p for p in peso if isinstance(p, (int, float)))
+                        # Filtrar None y strings, tomar máximo
+                        pesos_validos = [p for p in peso if isinstance(p, (int, float))]
+                        if pesos_validos:
+                            peso_val = max(pesos_validos)
+                        else:
+                            continue
                     elif isinstance(peso, (int, float)):
                         peso_val = peso
                     else:
@@ -1289,14 +1310,20 @@ def get_ejercicios_frecuentes():
                     ejercicios[nombre]["ultimo_peso"] = peso_val
                     ejercicios[nombre]["max_peso"] = max(ejercicios[nombre]["max_peso"], peso_val)
         
-        # Ordenar por frecuencia y limpiar
-        resultado = sorted(ejercicios.values(), key=lambda x: x["veces"], reverse=True)[:20]
+        # Ordenar por frecuencia
+        resultado = sorted(ejercicios.values(), key=lambda x: x["veces"], reverse=True)
+        
+        # Aplicar límite si se especifica
+        if limit > 0:
+            resultado = resultado[:limit]
+        
+        # Limpiar y calcular promedios
         for ej in resultado:
             if ej["pesos"]:
                 ej["promedio_peso"] = round(sum(ej["pesos"]) / len(ej["pesos"]), 1)
             del ej["pesos"]
         
-        return {"ejercicios": resultado}
+        return {"ejercicios": resultado, "total": len(resultado)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1562,7 +1589,7 @@ DATOS DEL USUARIO:
                 nivel=nivel
             )
             
-            resultado = await generar_rutina(rutina_request)
+            resultado = generar_rutina(rutina_request)  # Sin await - no es async
             rutina = resultado["rutina"]
             
             # Formatear respuesta
@@ -1587,14 +1614,24 @@ DATOS DEL USUARIO:
         
         # Chat general con AI
         system_prompt = f"""Eres el asistente de entrenamiento personal de Trener. Tu nombre es Trener AI.
-Eres experto en fitness, nutrición y entrenamiento de fuerza.
+Eres experto en HIPERTROFIA MASCULINA, nutrición para ganar músculo y entrenamiento de fuerza.
+Tu objetivo principal es ayudar al usuario a GANAR MASA MUSCULAR (hipertrofia).
+
+PRINCIPIOS DE HIPERTROFIA QUE SIEMPRE APLICAS:
+- Rangos de 8-12 repeticiones para hipertrofia óptima
+- 3-5 series por ejercicio
+- Volumen alto: 15-25 series por grupo muscular por semana
+- Sobrecarga progresiva: aumentar peso gradualmente
+- Nutrición: superávit calórico, 1.6-2.2g proteína por kg peso
+- Descanso: 48-72h entre trabajar el mismo grupo
+
 Responde de forma amigable, usa emojis ocasionalmente, y sé conciso.
 Si el usuario pregunta sobre generar rutinas, sugiere que te diga qué tipo de entrenamiento quiere.
 
 {contexto_usuario}
 
 CAPACIDADES:
-- Puedes generar rutinas personalizadas
+- Puedes generar rutinas personalizadas para HIPERTROFIA
 - Tienes acceso al historial de entrenamientos
 - Puedes ver racha, PRs, estadísticas
 - Puedes dar consejos de entrenamiento
@@ -1630,6 +1667,442 @@ Responde en español."""
             "tipo": "error",
             "error": str(e)
         }
+
+
+# ================= REGISTRO INTELIGENTE DE EJERCICIOS =================
+
+# Colección para entrenamientos en curso por usuario (chat)
+entrenamiento_chat_collection = db["entrenamiento_chat"]
+
+# Diccionario de normalización de nombres de ejercicios
+EJERCICIOS_NORMALIZADOS = {
+    # Espalda
+    "remo t": "Remo T-Bar",
+    "remo acostado": "Remo T-Bar",
+    "remo con barra": "Remo con barra",
+    "remo mancuerna": "Remo con mancuerna",
+    "remo con mancuerna": "Remo con mancuerna",
+    "polea al pecho": "Jalón al pecho",
+    "jalon al pecho": "Jalón al pecho",
+    "jalón": "Jalón al pecho",
+    "polea": "Jalón al pecho",
+    "dominadas": "Dominadas",
+    "pull up": "Dominadas",
+    "pullup": "Dominadas",
+    # Bíceps
+    "predicador": "Curl predicador",
+    "curl predicador": "Curl predicador",
+    "biceps predicador": "Curl predicador",
+    "curl martillo": "Curl martillo",
+    "martillo": "Curl martillo",
+    "curl barra": "Curl con barra",
+    "curl mancuerna": "Curl con mancuerna",
+    "curl polea": "Curl en polea",
+    # Pecho
+    "press banca": "Press banca",
+    "press plano": "Press banca",
+    "press inclinado": "Press inclinado",
+    "press declinado": "Press declinado",
+    "aperturas": "Aperturas con mancuerna",
+    "flies": "Aperturas con mancuerna",
+    "cruces polea": "Cruces en polea",
+    "crossover": "Cruces en polea",
+    # Hombros
+    "press militar": "Press militar",
+    "press hombro": "Press militar",
+    "elevaciones laterales": "Elevaciones laterales",
+    "laterales": "Elevaciones laterales",
+    "elevaciones frontales": "Elevaciones frontales",
+    "frontales": "Elevaciones frontales",
+    "pajaros": "Pájaros",
+    "face pull": "Face pull",
+    # Tríceps
+    "fondos": "Fondos",
+    "dips": "Fondos",
+    "extension triceps": "Extensión de tríceps",
+    "triceps polea": "Extensión de tríceps en polea",
+    "copa": "Copa con mancuerna",
+    "patada triceps": "Patada de tríceps",
+    # Piernas
+    "sentadilla": "Sentadilla",
+    "squat": "Sentadilla",
+    "prensa": "Prensa",
+    "leg press": "Prensa",
+    "extension cuadriceps": "Extensión de cuádriceps",
+    "curl femoral": "Curl femoral",
+    "peso muerto": "Peso muerto",
+    "deadlift": "Peso muerto",
+    "zancadas": "Zancadas",
+    "lunges": "Zancadas",
+    "hip thrust": "Hip thrust",
+    "elevacion talones": "Elevación de talones",
+    "pantorrillas": "Elevación de talones",
+}
+
+
+class RegistrarEjercicioRequest(BaseModel):
+    texto: str
+    usuario_id: str
+
+
+class IniciarEntrenamientoChatRequest(BaseModel):
+    usuario_id: str
+    tipo: Optional[str] = "general"
+
+
+class FinalizarEntrenamientoChatRequest(BaseModel):
+    usuario_id: str
+
+
+@app.post("/api/chat/iniciar-entrenamiento")
+def iniciar_entrenamiento_chat(request: IniciarEntrenamientoChatRequest):
+    """Iniciar un nuevo entrenamiento desde el chat"""
+    try:
+        # Verificar si ya hay uno activo
+        existente = entrenamiento_chat_collection.find_one({
+            "usuario_id": request.usuario_id,
+            "completado": False
+        })
+        
+        if existente:
+            ejercicios = existente.get("ejercicios", [])
+            return {
+                "mensaje": f"⚠️ Ya tienes un entrenamiento en curso con {len(ejercicios)} ejercicios registrados.\n\n"
+                          f"Puedes:\n• Seguir agregando ejercicios\n• Decir 'terminar' para guardarlo\n• Decir 'cancelar' para descartarlo",
+                "entrenamiento_id": str(existente["_id"]),
+                "ejercicios_actuales": len(ejercicios)
+            }
+        
+        # Crear nuevo entrenamiento
+        nuevo = {
+            "usuario_id": request.usuario_id,
+            "tipo": request.tipo,
+            "fecha": date.today().isoformat(),
+            "hora_inicio": datetime.now().isoformat(),
+            "ejercicios": [],
+            "completado": False
+        }
+        
+        result = entrenamiento_chat_collection.insert_one(nuevo)
+        
+        return {
+            "mensaje": f"🏋️ ¡Entrenamiento iniciado!\n\n"
+                      f"Ahora puedes ir registrando ejercicios. Ejemplos:\n"
+                      f"• `Press banca 60kg 4x10`\n"
+                      f"• `Remo T 15 20 25 30 30`\n"
+                      f"• `Curl predicador 7.5kg por mano 3x10`\n\n"
+                      f"Cuando termines, di 'terminar entrenamiento'",
+            "entrenamiento_id": str(result.inserted_id),
+            "tipo": "entrenamiento_iniciado"
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chat/registrar-ejercicio")
+def registrar_ejercicio_chat(request: RegistrarEjercicioRequest):
+    """Parsear texto libre y registrar ejercicio en el entrenamiento activo"""
+    try:
+        # Buscar entrenamiento activo
+        entrenamiento = entrenamiento_chat_collection.find_one({
+            "usuario_id": request.usuario_id,
+            "completado": False
+        })
+        
+        if not entrenamiento:
+            # Auto-iniciar entrenamiento
+            nuevo = {
+                "usuario_id": request.usuario_id,
+                "tipo": "general",
+                "fecha": date.today().isoformat(),
+                "hora_inicio": datetime.now().isoformat(),
+                "ejercicios": [],
+                "completado": False
+            }
+            result = entrenamiento_chat_collection.insert_one(nuevo)
+            entrenamiento = entrenamiento_chat_collection.find_one({"_id": result.inserted_id})
+        
+        # Usar AI para parsear el texto
+        prompt = f"""Analiza este texto de registro de ejercicio de gimnasio y extrae la información estructurada.
+
+TEXTO: "{request.texto}"
+
+El usuario puede escribir de formas variadas como:
+- "Remo T o acostado 15 kg 20 kg 25 kg 30 30" → significa series progresivas: 15kg, 20kg, 25kg, 30kg, 30kg
+- "Polea al pecho bajando. 35 ,40 45 50 55" → series descendentes o progresivas
+- "Remo con mancuerna 17.5 4*10" → 4 series de 10 reps a 17.5kg
+- "Predicador 310 7.5 por mano, luego 3 5 10 kg por mano" → primero 3x10 a 7.5kg, luego 3 series a 5kg y 10kg
+- "Press banca 60kg 10 10 8 6" → 60kg con reps 10, 10, 8, 6
+
+REGLAS:
+1. Si hay varios números seguidos sin "x" o "*", son los pesos de cada serie
+2. Si dice "4x10" o "4*10" significa 4 series de 10 reps
+3. Si dice "por mano" o "cada lado", el peso es por mano
+4. Normaliza el nombre del ejercicio a algo estándar
+
+Responde SOLO con un JSON válido (sin markdown):
+{{
+    "nombre": "nombre normalizado del ejercicio",
+    "series": [
+        {{"peso": número, "repeticiones": número}},
+        ...
+    ],
+    "notas": "notas adicionales si las hay",
+    "confianza": 0.0-1.0
+}}"""
+
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=500,
+        )
+        
+        respuesta_ai = completion.choices[0].message.content.strip()
+        
+        # Limpiar respuesta de markdown si viene con ```json
+        if respuesta_ai.startswith("```"):
+            respuesta_ai = respuesta_ai.split("```")[1]
+            if respuesta_ai.startswith("json"):
+                respuesta_ai = respuesta_ai[4:]
+        respuesta_ai = respuesta_ai.strip()
+        
+        import json
+        ejercicio_parseado = json.loads(respuesta_ai)
+        
+        # Normalizar nombre con nuestro diccionario
+        nombre_lower = ejercicio_parseado["nombre"].lower()
+        for key, value in EJERCICIOS_NORMALIZADOS.items():
+            if key in nombre_lower:
+                ejercicio_parseado["nombre"] = value
+                break
+        
+        # Calcular totales
+        series = ejercicio_parseado.get("series", [])
+        total_series = len(series)
+        pesos = [s.get("peso", 0) for s in series]
+        reps = [s.get("repeticiones", 10) for s in series]
+        
+        # Formato para guardar
+        ejercicio_guardar = {
+            "nombre": ejercicio_parseado["nombre"],
+            "series": total_series,
+            "repeticiones": reps if len(set(reps)) > 1 else reps[0] if reps else 10,
+            "peso_kg": pesos if len(set(pesos)) > 1 else pesos[0] if pesos else 0,
+            "detalle_series": series,
+            "texto_original": request.texto,
+            "notas": ejercicio_parseado.get("notas", ""),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        # Agregar al entrenamiento
+        entrenamiento_chat_collection.update_one(
+            {"_id": entrenamiento["_id"]},
+            {"$push": {"ejercicios": ejercicio_guardar}}
+        )
+        
+        # Contar ejercicios actuales
+        entrenamiento_actualizado = entrenamiento_chat_collection.find_one({"_id": entrenamiento["_id"]})
+        total_ejercicios = len(entrenamiento_actualizado.get("ejercicios", []))
+        
+        # Formatear respuesta
+        pesos_str = ", ".join([f"{p}kg" for p in pesos]) if isinstance(pesos, list) else f"{pesos}kg"
+        reps_str = ", ".join([str(r) for r in reps]) if isinstance(reps, list) else str(reps)
+        
+        return {
+            "mensaje": f"✅ **{ejercicio_parseado['nombre']}** registrado!\n\n"
+                      f"📊 {total_series} series | Pesos: {pesos_str} | Reps: {reps_str}\n"
+                      f"📝 Total hoy: {total_ejercicios} ejercicios\n\n"
+                      f"_Sigue agregando o di 'terminar' cuando acabes_",
+            "ejercicio": ejercicio_guardar,
+            "tipo": "ejercicio_registrado",
+            "total_ejercicios": total_ejercicios
+        }
+        
+    except json.JSONDecodeError as e:
+        return {
+            "mensaje": f"🤔 No pude entender bien eso. ¿Puedes reformularlo?\n\nEjemplos:\n"
+                      f"• `Press banca 60kg 4x10`\n"
+                      f"• `Remo 15 20 25 30` (pesos progresivos)",
+            "tipo": "error",
+            "error": f"JSON parse error: {str(e)}"
+        }
+    except Exception as e:
+        return {
+            "mensaje": f"❌ Error al registrar: {str(e)}",
+            "tipo": "error",
+            "error": str(e)
+        }
+
+
+@app.post("/api/chat/finalizar-entrenamiento")
+def finalizar_entrenamiento_chat(request: FinalizarEntrenamientoChatRequest):
+    """Finalizar y guardar el entrenamiento actual"""
+    try:
+        entrenamiento = entrenamiento_chat_collection.find_one({
+            "usuario_id": request.usuario_id,
+            "completado": False
+        })
+        
+        if not entrenamiento:
+            return {
+                "mensaje": "⚠️ No tienes ningún entrenamiento en curso.\n\nDi 'iniciar entrenamiento' para comenzar uno.",
+                "tipo": "sin_entrenamiento"
+            }
+        
+        ejercicios = entrenamiento.get("ejercicios", [])
+        
+        if len(ejercicios) == 0:
+            # Cancelar si no hay ejercicios
+            entrenamiento_chat_collection.delete_one({"_id": entrenamiento["_id"]})
+            return {
+                "mensaje": "🗑️ Entrenamiento cancelado (no había ejercicios registrados).",
+                "tipo": "cancelado"
+            }
+        
+        # Detectar tipo de entrenamiento basado en ejercicios
+        nombres = [ej["nombre"].lower() for ej in ejercicios]
+        tipo = "general"
+        if any(w in " ".join(nombres) for w in ["press banca", "pecho", "aperturas", "fondos", "tríceps"]):
+            tipo = "push"
+        elif any(w in " ".join(nombres) for w in ["remo", "jalón", "dominadas", "curl", "bíceps"]):
+            tipo = "pull"
+        elif any(w in " ".join(nombres) for w in ["sentadilla", "prensa", "cuádriceps", "femoral", "zancada"]):
+            tipo = "legs"
+        
+        # Detectar grupos musculares
+        grupos = set()
+        for nombre in nombres:
+            if any(w in nombre for w in ["press banca", "pecho", "apertura"]):
+                grupos.add("pecho")
+            if any(w in nombre for w in ["press militar", "lateral", "frontal", "hombro"]):
+                grupos.add("hombros")
+            if any(w in nombre for w in ["tríceps", "fondos", "extensión", "copa"]):
+                grupos.add("tríceps")
+            if any(w in nombre for w in ["remo", "jalón", "dominadas", "espalda"]):
+                grupos.add("espalda")
+            if any(w in nombre for w in ["curl", "bíceps", "predicador", "martillo"]):
+                grupos.add("bíceps")
+            if any(w in nombre for w in ["sentadilla", "prensa", "cuádriceps", "femoral", "pierna"]):
+                grupos.add("piernas")
+        
+        # Convertir ejercicios al formato estándar
+        ejercicios_formato = []
+        for ej in ejercicios:
+            ejercicios_formato.append({
+                "nombre": ej["nombre"],
+                "series": ej["series"],
+                "repeticiones": ej["repeticiones"],
+                "peso_kg": ej["peso_kg"]
+            })
+        
+        # Guardar en la colección principal
+        entrenamiento_guardar = {
+            "nombre": f"Entrenamiento {tipo.capitalize()} - {entrenamiento['fecha']}",
+            "tipo": tipo,
+            "fecha": entrenamiento["fecha"],
+            "grupos_musculares": list(grupos) if grupos else [tipo],
+            "ejercicios": ejercicios_formato,
+            "registrado_via": "chat",
+            "hora_inicio": entrenamiento.get("hora_inicio"),
+            "hora_fin": datetime.now().isoformat()
+        }
+        
+        result = collection.insert_one(entrenamiento_guardar)
+        
+        # Marcar como completado
+        entrenamiento_chat_collection.update_one(
+            {"_id": entrenamiento["_id"]},
+            {"$set": {"completado": True, "guardado_id": str(result.inserted_id)}}
+        )
+        
+        # Calcular estadísticas
+        total_series = sum(ej["series"] for ej in ejercicios)
+        
+        # Formatear resumen
+        resumen_ejercicios = "\n".join([
+            f"  • {ej['nombre']}: {ej['series']}x{ej['repeticiones'] if isinstance(ej['repeticiones'], int) else 'var'} @ {ej['peso_kg']}kg"
+            for ej in ejercicios[:5]  # Mostrar máximo 5
+        ])
+        if len(ejercicios) > 5:
+            resumen_ejercicios += f"\n  ... y {len(ejercicios) - 5} más"
+        
+        return {
+            "mensaje": f"🎉 **¡Entrenamiento guardado!**\n\n"
+                      f"📅 {entrenamiento['fecha']}\n"
+                      f"💪 Tipo: {tipo.upper()}\n"
+                      f"📊 {len(ejercicios)} ejercicios | {total_series} series\n\n"
+                      f"**Ejercicios:**\n{resumen_ejercicios}\n\n"
+                      f"¡Buen trabajo! 💪🔥",
+            "tipo": "entrenamiento_guardado",
+            "entrenamiento_id": str(result.inserted_id),
+            "estadisticas": {
+                "ejercicios": len(ejercicios),
+                "series": total_series,
+                "tipo": tipo
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/chat/cancelar-entrenamiento")
+def cancelar_entrenamiento_chat(request: FinalizarEntrenamientoChatRequest):
+    """Cancelar el entrenamiento en curso sin guardar"""
+    try:
+        result = entrenamiento_chat_collection.delete_one({
+            "usuario_id": request.usuario_id,
+            "completado": False
+        })
+        
+        if result.deleted_count > 0:
+            return {
+                "mensaje": "🗑️ Entrenamiento cancelado y descartado.",
+                "tipo": "cancelado"
+            }
+        else:
+            return {
+                "mensaje": "No había ningún entrenamiento en curso.",
+                "tipo": "sin_entrenamiento"
+            }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/chat/entrenamiento-actual/{usuario_id}")
+def obtener_entrenamiento_actual(usuario_id: str):
+    """Obtener el estado del entrenamiento actual"""
+    try:
+        entrenamiento = entrenamiento_chat_collection.find_one({
+            "usuario_id": usuario_id,
+            "completado": False
+        })
+        
+        if not entrenamiento:
+            return {
+                "activo": False,
+                "mensaje": "No hay entrenamiento en curso"
+            }
+        
+        ejercicios = entrenamiento.get("ejercicios", [])
+        
+        return {
+            "activo": True,
+            "fecha": entrenamiento["fecha"],
+            "ejercicios": len(ejercicios),
+            "detalle": [
+                {
+                    "nombre": ej["nombre"],
+                    "series": ej["series"],
+                    "peso": ej["peso_kg"]
+                }
+                for ej in ejercicios
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

@@ -54,6 +54,26 @@ const GYM_KEYWORDS = [
     'cuántas', 'cuantas', 'debería', 'deberia'
 ];
 
+// ================== KEYWORDS PARA REGISTRO DE EJERCICIOS ==================
+const INICIAR_ENTRENAMIENTO_KEYWORDS = [
+    'iniciar entrenamiento', 'empezar entrenamiento', 'comenzar entrenamiento',
+    'nuevo entrenamiento', 'voy al gym', 'voy al gimnasio',
+    'empiezo', 'arranco', 'inicio sesion', 'inicio sesión'
+];
+
+const TERMINAR_ENTRENAMIENTO_KEYWORDS = [
+    'terminar', 'finalizar', 'acabé', 'acabe', 'terminé', 'termine',
+    'guardar entrenamiento', 'listo', 'ya acabé', 'ya termine',
+    'fin entrenamiento', 'cerrar sesion', 'cerrar sesión'
+];
+
+const CANCELAR_ENTRENAMIENTO_KEYWORDS = [
+    'cancelar', 'descartar', 'borrar entrenamiento', 'no guardar'
+];
+
+// Patrones que indican registro de ejercicio (números + nombre de ejercicio)
+const EJERCICIO_PATTERN = /^[a-záéíóúñ\s]+([\d]+[\s,]*)+/i;
+
 // ================== CLIENT ==================
 const client = sdk.createClient({
     baseUrl: HOMESERVER_URL,
@@ -102,13 +122,9 @@ client.on('Room.timeline', async (event, room, toStartOfTimeline) => {
         
         let reply;
         
-        if (isGymRelated(message)) {
-            console.log('🏋️ Detectado como consulta de gimnasio → Trener AI');
-            reply = await processWithTrenerAI(message, sender);
-        } else {
-            console.log('🤖 Enviando a n8n');
-            reply = await processWithN8N(message, sender, roomId);
-        }
+        // Siempre usar Trener AI - es más inteligente y tiene contexto del usuario
+        console.log('🏋️ Procesando con Trener AI');
+        reply = await processWithTrenerAI(message, sender);
         
         await client.sendTyping(roomId, false);
         
@@ -163,6 +179,40 @@ function checkRateLimit(sender) {
 // ================== TRENER AI (Chat Inteligente) ==================
 async function processWithTrenerAI(message, sender) {
     try {
+        const msgLower = message.toLowerCase().trim();
+        
+        // === DETECTAR COMANDOS DE ENTRENAMIENTO ===
+        
+        // 1. Iniciar entrenamiento
+        if (INICIAR_ENTRENAMIENTO_KEYWORDS.some(k => msgLower.includes(k))) {
+            return await iniciarEntrenamiento(sender);
+        }
+        
+        // 2. Terminar/guardar entrenamiento
+        if (TERMINAR_ENTRENAMIENTO_KEYWORDS.some(k => msgLower.includes(k))) {
+            return await finalizarEntrenamiento(sender);
+        }
+        
+        // 3. Cancelar entrenamiento
+        if (CANCELAR_ENTRENAMIENTO_KEYWORDS.some(k => msgLower.includes(k))) {
+            return await cancelarEntrenamiento(sender);
+        }
+        
+        // 4. Detectar si parece registro de ejercicio (tiene números y texto)
+        const tieneNumeros = /\d/.test(message);
+        const tieneTextoEjercicio = /[a-záéíóúñ]{3,}/i.test(message);
+        const noEsPregunta = !message.includes('?') && !msgLower.startsWith('cuanto') && !msgLower.startsWith('cuánto');
+        
+        // Si hay entrenamiento activo y parece un ejercicio, registrarlo
+        if (tieneNumeros && tieneTextoEjercicio && noEsPregunta) {
+            const entrenamientoActivo = await verificarEntrenamientoActivo(sender);
+            if (entrenamientoActivo || looksLikeExercise(message)) {
+                return await registrarEjercicio(message, sender);
+            }
+        }
+        
+        // === CHAT NORMAL CON AI ===
+        
         // Obtener contexto previo de la conversación
         const contexto = conversationContext.get(sender) || [];
         
@@ -210,6 +260,95 @@ async function processWithTrenerAI(message, sender) {
         
         // Fallback al endpoint básico
         return await processWithTrenerBasic(message, sender);
+    }
+}
+
+// ================== FUNCIONES DE REGISTRO DE ENTRENAMIENTO ==================
+
+async function verificarEntrenamientoActivo(sender) {
+    try {
+        const response = await axios.get(`${TRENER_API_URL}/api/chat/entrenamiento-actual/${encodeURIComponent(sender)}`, {
+            timeout: 5000
+        });
+        return response.data.activo;
+    } catch {
+        return false;
+    }
+}
+
+function looksLikeExercise(message) {
+    // Patrones comunes de ejercicios
+    const patterns = [
+        /\d+\s*(kg|lb)/i,           // Tiene peso con unidad
+        /\d+\s*[x*]\s*\d+/i,        // Tiene formato 4x10
+        /\d+\s+\d+\s+\d+/,          // Múltiples números seguidos (series)
+        /(press|remo|curl|jalón|jalon|sentadilla|peso muerto|dominadas|aperturas|elevaciones|fondos)/i
+    ];
+    return patterns.some(p => p.test(message));
+}
+
+async function iniciarEntrenamiento(sender) {
+    try {
+        const response = await axios.post(`${TRENER_API_URL}/api/chat/iniciar-entrenamiento`, {
+            usuario_id: sender
+        }, {
+            timeout: 10000,
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        return response.data.mensaje;
+    } catch (err) {
+        console.error('❌ Error iniciando entrenamiento:', err.message);
+        return '❌ No pude iniciar el entrenamiento. Intenta de nuevo.';
+    }
+}
+
+async function registrarEjercicio(texto, sender) {
+    try {
+        const response = await axios.post(`${TRENER_API_URL}/api/chat/registrar-ejercicio`, {
+            texto: texto,
+            usuario_id: sender
+        }, {
+            timeout: 15000,
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        return response.data.mensaje;
+    } catch (err) {
+        console.error('❌ Error registrando ejercicio:', err.message);
+        return '❌ No pude registrar ese ejercicio. ¿Puedes reformularlo?';
+    }
+}
+
+async function finalizarEntrenamiento(sender) {
+    try {
+        const response = await axios.post(`${TRENER_API_URL}/api/chat/finalizar-entrenamiento`, {
+            usuario_id: sender
+        }, {
+            timeout: 10000,
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        return response.data.mensaje;
+    } catch (err) {
+        console.error('❌ Error finalizando entrenamiento:', err.message);
+        return '❌ No pude guardar el entrenamiento. Intenta de nuevo.';
+    }
+}
+
+async function cancelarEntrenamiento(sender) {
+    try {
+        const response = await axios.post(`${TRENER_API_URL}/api/chat/cancelar-entrenamiento`, {
+            usuario_id: sender
+        }, {
+            timeout: 10000,
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        return response.data.mensaje;
+    } catch (err) {
+        console.error('❌ Error cancelando entrenamiento:', err.message);
+        return '❌ No pude cancelar el entrenamiento.';
     }
 }
 

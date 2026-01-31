@@ -54,6 +54,7 @@ interface OnermData {
 
 export default function ProgresoPage() {
   const [ejercicioSeleccionado, setEjercicioSeleccionado] = useState("");
+  const [busquedaEjercicio, setBusquedaEjercicio] = useState("");
   const [progresoEjercicio, setProgresoEjercicio] = useState<ProgresoEjercicio[]>([]);
   const [volumenSemanal, setVolumenSemanal] = useState<VolumenSemanal[]>([]);
   const [porGrupo, setPorGrupo] = useState<Record<string, GrupoData>>({});
@@ -61,6 +62,11 @@ export default function ProgresoPage() {
   const [oneRmData, setOneRmData] = useState<OnermData[]>([]);
   const [comparativa, setComparativa] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  // Filtrar ejercicios según búsqueda
+  const ejerciciosFiltrados = ejerciciosFrecuentes.filter(ej =>
+    ej.nombre.toLowerCase().includes(busquedaEjercicio.toLowerCase())
+  );
 
   useEffect(() => {
     cargarDatos();
@@ -296,6 +302,17 @@ export default function ProgresoPage() {
               Progreso por Ejercicio
             </h2>
 
+            {/* Buscador de ejercicio */}
+            <div className="mb-3">
+              <input
+                type="text"
+                value={busquedaEjercicio}
+                onChange={(e) => setBusquedaEjercicio(e.target.value)}
+                placeholder="Buscar ejercicio... (ej: press, curl, remo)"
+                className="w-full bg-gym-dark border border-white/20 rounded-lg px-4 py-2 text-white placeholder-gray-500 focus:outline-none focus:border-gym-purple text-sm"
+              />
+            </div>
+
             {/* Selector de ejercicio */}
             <div className="relative mb-6">
               <select
@@ -303,13 +320,16 @@ export default function ProgresoPage() {
                 onChange={(e) => setEjercicioSeleccionado(e.target.value)}
                 className="w-full bg-gym-dark border border-white/20 rounded-lg px-4 py-3 text-white appearance-none cursor-pointer focus:outline-none focus:border-gym-purple"
               >
-                {ejerciciosFrecuentes.map((ej, i) => (
+                {ejerciciosFiltrados.map((ej, i) => (
                   <option key={i} value={ej.nombre}>
-                    {ej.nombre} ({ej.veces} veces)
+                    {ej.nombre} ({ej.veces}x) - Max: {ej.max_peso}kg
                   </option>
                 ))}
               </select>
               <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+              <span className="text-xs text-gray-500 mt-1 block">
+                {ejerciciosFiltrados.length} de {ejerciciosFrecuentes.length} ejercicios
+              </span>
             </div>
 
             {/* Métricas del ejercicio */}
