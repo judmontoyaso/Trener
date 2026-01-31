@@ -4,7 +4,7 @@ from pymongo import MongoClient
 from bson import ObjectId
 from pydantic import BaseModel, Field
 from typing import List, Optional, Union
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
