@@ -1301,6 +1301,307 @@ def get_ejercicios_frecuentes():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ================= MÉTRICAS AVANZADAS =================
+
+def calcular_1rm(peso: float, repeticiones: int) -> float:
+    """Calcula el 1RM usando la fórmula de Brzycki"""
+    if repeticiones <= 0 or peso <= 0:
+        return 0
+    if repeticiones == 1:
+        return peso
+    return round(peso * (36 / (37 - repeticiones)), 1)
+
+
+@app.get("/api/metricas/1rm")
+def get_todos_1rm():
+    """Obtener 1RM estimado para todos los ejercicios principales"""
+    try:
+        docs = list(collection.find({}).sort("fecha", -1))
+        
+        ejercicios_1rm = {}
+        
+        for doc in docs:
+            for ej in doc.get("ejercicios", []):
+                nombre = ej.get("nombre", "")
+                peso = ej.get("peso_kg")
+                reps = ej.get("repeticiones")
+                
+                if not nombre or not peso or peso == "ajustar":
+                    continue
+                
+                # Normalizar peso y reps
+                if isinstance(peso, list):
+                    peso = max(p for p in peso if isinstance(p, (int, float)))
+                if isinstance(reps, list):
+                    reps = min(reps)  # Usar el menor para ser conservador
+                if not isinstance(reps, int) or reps > 12:
+                    continue  # 1RM solo es preciso con menos de 12 reps
+                
+                rm = calcular_1rm(peso, reps)
+                
+                if nombre not in ejercicios_1rm or rm > ejercicios_1rm[nombre]["rm"]:
+                    ejercicios_1rm[nombre] = {
+                        "ejercicio": nombre,
+                        "rm": rm,
+                        "peso_usado": peso,
+                        "reps": reps,
+                        "fecha": doc.get("fecha")
+                    }
+        
+        resultado = sorted(ejercicios_1rm.values(), key=lambda x: x["rm"], reverse=True)
+        return {"ejercicios": resultado}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/metricas/comparativa-semanal")
+def get_comparativa_semanal():
+    """Comparar esta semana vs semana pasada"""
+    try:
+        hoy = date.today()
+        inicio_esta_semana = hoy - timedelta(days=hoy.weekday())
+        inicio_semana_pasada = inicio_esta_semana - timedelta(days=7)
+        
+        docs = list(collection.find({
+            "fecha": {"$gte": inicio_semana_pasada.isoformat()}
+        }))
+        
+        esta_semana = {"entrenamientos": 0, "series": 0, "volumen": 0}
+        semana_pasada = {"entrenamientos": 0, "series": 0, "volumen": 0}
+        
+        for doc in docs:
+            fecha = doc.get("fecha", "")
+            datos = esta_semana if fecha >= inicio_esta_semana.isoformat() else semana_pasada
+            
+            datos["entrenamientos"] += 1
+            for ej in doc.get("ejercicios", []):
+                series = ej.get("series", 0)
+                datos["series"] += series
+                peso = ej.get("peso_kg")
+                if peso and peso != "ajustar":
+                    if isinstance(peso, list):
+                        peso = sum(peso) / len(peso)
+                    reps = ej.get("repeticiones", 10)
+                    if isinstance(reps, list):
+                        reps = sum(reps) / len(reps)
+                    datos["volumen"] += series * reps * peso
+        
+        # Calcular porcentajes de cambio
+        def calcular_cambio(actual, anterior):
+            if anterior == 0:
+                return 100 if actual > 0 else 0
+            return round(((actual - anterior) / anterior) * 100, 1)
+        
+        return {
+            "esta_semana": esta_semana,
+            "semana_pasada": semana_pasada,
+            "cambio": {
+                "entrenamientos": calcular_cambio(esta_semana["entrenamientos"], semana_pasada["entrenamientos"]),
+                "series": calcular_cambio(esta_semana["series"], semana_pasada["series"]),
+                "volumen": calcular_cambio(esta_semana["volumen"], semana_pasada["volumen"])
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/metricas/resumen-inteligente")
+async def get_resumen_inteligente():
+    """Genera un resumen inteligente con insights usando AI"""
+    try:
+        # Recopilar datos
+        stats = get_estadisticas()
+        racha = calcular_racha()
+        semana = resumen_semana()
+        comparativa = get_comparativa_semanal()
+        prs = obtener_prs()[:5]
+        logros = obtener_logros_usuario()
+        
+        # Construir contexto para AI
+        contexto = f"""
+Datos del usuario de gimnasio:
+- Total entrenamientos: {stats['totalEntrenamientos']}
+- Días entrenados: {stats['diasEntrenados']}
+- Racha actual: {racha['racha_actual']} entrenamientos consecutivos
+- Esta semana: {semana['entrenamientos']} entrenamientos, {semana['total_series']} series
+- Grupos trabajados esta semana: {', '.join(semana['grupos_trabajados']) or 'ninguno'}
+- Cambio vs semana pasada: {comparativa['cambio']['entrenamientos']}% entrenamientos, {comparativa['cambio']['volumen']}% volumen
+- Nivel: {logros['nivel']} ({logros['titulo']})
+- XP: {logros['xp']}
+- PRs recientes: {', '.join([f"{p['ejercicio']}: {p['peso']}kg" for p in prs]) if prs else 'ninguno'}
+"""
+        
+        prompt = f"""Eres un coach de fitness amigable. Basado en estos datos, da un resumen breve (3-4 líneas máximo) 
+con un insight motivacional y una sugerencia práctica. Usa emojis. Sé directo y personal.
+
+{contexto}
+
+Responde en español de forma natural y motivadora:"""
+
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Eres un coach de fitness amigable y motivador. Respuestas cortas y directas."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.8,
+            max_tokens=200,
+        )
+        
+        resumen_ai = completion.choices[0].message.content.strip()
+        
+        return {
+            "resumen_ai": resumen_ai,
+            "stats": stats,
+            "racha": racha,
+            "semana": semana,
+            "comparativa": comparativa,
+            "nivel": {"nivel": logros["nivel"], "titulo": logros["titulo"], "xp": logros["xp"]}
+        }
+    except Exception as e:
+        return {
+            "resumen_ai": "💪 ¡Sigue entrenando! Estoy recopilando datos para darte mejores insights.",
+            "error": str(e)
+        }
+
+
+# ================= CHAT AI INTELIGENTE =================
+
+class ChatRequest(BaseModel):
+    mensaje: str
+    contexto: Optional[List[dict]] = None
+
+
+@app.post("/api/chat")
+async def chat_inteligente(request: ChatRequest):
+    """Chat conversacional inteligente con contexto del usuario"""
+    try:
+        # Obtener contexto del usuario
+        stats = get_estadisticas()
+        racha = calcular_racha()
+        semana = resumen_semana()
+        ultimo = collection.find_one({}, sort=[("fecha", -1)])
+        prs = obtener_prs()[:5]
+        logros = obtener_logros_usuario()
+        
+        contexto_usuario = f"""
+DATOS DEL USUARIO:
+- Total entrenamientos: {stats['totalEntrenamientos']}
+- Racha actual: {racha['racha_actual']}
+- Esta semana: {semana['entrenamientos']} entrenamientos
+- Grupos trabajados esta semana: {', '.join(semana['grupos_trabajados']) or 'ninguno'}
+- Nivel: {logros['nivel']} - {logros['titulo']}
+- Último entrenamiento: {ultimo.get('nombre') if ultimo else 'ninguno'} ({ultimo.get('fecha') if ultimo else 'N/A'})
+- PRs: {', '.join([f"{p['ejercicio']}: {p['peso']}kg" for p in prs]) if prs else 'ninguno'}
+"""
+        
+        mensaje_lower = request.mensaje.lower()
+        
+        # Detectar si quiere generar rutina
+        if any(word in mensaje_lower for word in ["genera", "generar", "crea", "crear", "hazme", "dame"]) and \
+           any(word in mensaje_lower for word in ["rutina", "entrenamiento", "workout"]):
+            
+            # Extraer parámetros del mensaje
+            tipo = "full"
+            if any(w in mensaje_lower for w in ["push", "pecho", "empuje"]):
+                tipo = "push"
+            elif any(w in mensaje_lower for w in ["pull", "espalda", "tirón", "jalon"]):
+                tipo = "pull"
+            elif any(w in mensaje_lower for w in ["pierna", "legs", "leg day"]):
+                tipo = "legs"
+            elif any(w in mensaje_lower for w in ["hombro", "shoulder"]):
+                tipo = "hombro"
+            
+            duracion = 45
+            if "30" in mensaje_lower or "media hora" in mensaje_lower:
+                duracion = 30
+            elif "60" in mensaje_lower or "una hora" in mensaje_lower or "1 hora" in mensaje_lower:
+                duracion = 60
+            
+            nivel = "intermedio"
+            if any(w in mensaje_lower for w in ["principiante", "básico", "inicio"]):
+                nivel = "principiante"
+            elif any(w in mensaje_lower for w in ["avanzado", "difícil", "intenso"]):
+                nivel = "avanzado"
+            
+            # Generar rutina
+            rutina_request = GenerarRutinaRequest(
+                tipo=tipo,
+                objetivo="hipertrofia",
+                duracion_minutos=duracion,
+                nivel=nivel
+            )
+            
+            resultado = await generar_rutina(rutina_request)
+            rutina = resultado["rutina"]
+            
+            # Formatear respuesta
+            ejercicios_texto = "\n".join([
+                f"  • {ej['nombre']}: {ej['series']}x{ej['repeticiones']} @ {ej['peso_kg']}kg"
+                for ej in rutina["ejercicios"]
+            ])
+            
+            respuesta = f"""🏋️ **{rutina['nombre']}**
+
+📋 **Ejercicios:**
+{ejercicios_texto}
+
+💡 Los pesos están basados en tu historial. ¿Quieres que la inicie o la modifico?"""
+
+            return {
+                "respuesta": respuesta,
+                "tipo": "rutina_generada",
+                "rutina": rutina,
+                "accion_sugerida": "iniciar_entrenamiento"
+            }
+        
+        # Chat general con AI
+        system_prompt = f"""Eres el asistente de entrenamiento personal de Trener. Tu nombre es Trener AI.
+Eres experto en fitness, nutrición y entrenamiento de fuerza.
+Responde de forma amigable, usa emojis ocasionalmente, y sé conciso.
+Si el usuario pregunta sobre generar rutinas, sugiere que te diga qué tipo de entrenamiento quiere.
+
+{contexto_usuario}
+
+CAPACIDADES:
+- Puedes generar rutinas personalizadas
+- Tienes acceso al historial de entrenamientos
+- Puedes ver racha, PRs, estadísticas
+- Puedes dar consejos de entrenamiento
+
+Responde en español."""
+
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        # Agregar historial de conversación si existe
+        if request.contexto:
+            messages.extend(request.contexto[-6:])  # Últimos 6 mensajes
+        
+        messages.append({"role": "user", "content": request.mensaje})
+        
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            temperature=0.7,
+            max_tokens=500,
+        )
+        
+        respuesta = completion.choices[0].message.content.strip()
+        
+        return {
+            "respuesta": respuesta,
+            "tipo": "chat",
+            "contexto_actualizado": messages[-6:]  # Devolver últimos mensajes para mantener contexto
+        }
+        
+    except Exception as e:
+        return {
+            "respuesta": f"Ups, algo salió mal. ¿Puedes reformular tu pregunta? 🤔",
+            "tipo": "error",
+            "error": str(e)
+        }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
