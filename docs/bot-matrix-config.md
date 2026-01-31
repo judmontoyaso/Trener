@@ -3,96 +3,21 @@
 ## Resumen
 Este bot escucha mensajes en Matrix y responde con información de entrenamientos.
 
-## Configuración en n8n
+## Variables de Entorno Requeridas
 
-### 1. Trigger de Matrix (Webhook o Polling)
-Como Matrix es self-hosted en `matrix.juanmontoya.me`, puedes usar:
+Crea un archivo `.env` en la carpeta `bot-matrix/`:
 
-**Opción A: Matrix Webhook (Recomendado)**
-- Configura un Application Service en tu servidor Matrix
-- O usa un bot que haga polling al servidor
+```env
+# Matrix
+MATRIX_HOMESERVER=https://tu-servidor-matrix.com
+MATRIX_ACCESS_TOKEN=<tu_token_aqui>
+MATRIX_BOT_USER_ID=@tu-bot:tu-servidor.com
+MATRIX_ROOM_ID=!room_id:tu-servidor.com
 
-**Opción B: Polling con HTTP Request**
-```
-Endpoint: https://matrix.juanmontoya.me/_matrix/client/r0/sync
-Headers: Authorization: Bearer 20af94821288db22cd94af8c4cc1f38956ecd995f5a26abf8f8320459d926efd
-```
-
-### 2. Workflow de n8n
-
-```json
-{
-  "name": "Trener Bot Matrix",
-  "nodes": [
-    {
-      "name": "Recibir Mensaje",
-      "type": "n8n-nodes-base.httpRequest",
-      "parameters": {
-        "method": "GET",
-        "url": "https://matrix.juanmontoya.me/_matrix/client/r0/sync",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "options": {
-          "timeout": 30000
-        }
-      },
-      "notes": "Polling del servidor Matrix"
-    },
-    {
-      "name": "Filtrar Mensajes",
-      "type": "n8n-nodes-base.if",
-      "parameters": {
-        "conditions": {
-          "string": [
-            {
-              "value1": "={{$json.rooms.join['!IOCZuxbnlAhsDKcUvG:matrix.juanmontoya.me'].timeline.events[0].content.body}}",
-              "operation": "isNotEmpty"
-            }
-          ]
-        }
-      }
-    },
-    {
-      "name": "Consultar Bot API",
-      "type": "n8n-nodes-base.httpRequest",
-      "parameters": {
-        "method": "POST",
-        "url": "http://localhost:8000/api/bot/query",
-        "body": {
-          "mensaje": "={{$json.content.body}}",
-          "sender": "={{$json.sender}}"
-        },
-        "contentType": "application/json"
-      }
-    },
-    {
-      "name": "Responder en Matrix",
-      "type": "n8n-nodes-base.httpRequest",
-      "parameters": {
-        "method": "PUT",
-        "url": "https://matrix.juanmontoya.me/_matrix/client/r0/rooms/!IOCZuxbnlAhsDKcUvG:matrix.juanmontoya.me/send/m.room.message/{{$randomString}}",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "body": {
-          "msgtype": "m.text",
-          "body": "={{$json.respuesta}}",
-          "format": "org.matrix.custom.html",
-          "formatted_body": "={{$json.respuesta.replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>').replace(/\\n/g, '<br>')}}"
-        },
-        "contentType": "application/json"
-      }
-    }
-  ]
-}
-```
-
-### 3. Credenciales Requeridas
-
-```
-MATRIX_HOMESERVER=https://matrix.juanmontoya.me
-MATRIX_ACCESS_TOKEN=20af94821288db22cd94af8c4cc1f38956ecd995f5a26abf8f8320459d926efd
-MATRIX_ROOM_ID=!IOCZuxbnlAhsDKcUvG:matrix.juanmontoya.me
-TRENER_API=http://localhost:8000
+# APIs
+TRENER_API_URL=http://localhost:8000
+N8N_WEBHOOK_URL=<tu_webhook_n8n>
+N8N_WEBHOOK_TEST_URL=<tu_webhook_test_n8n>
 ```
 
 ## Comandos Soportados
@@ -117,51 +42,21 @@ curl -X POST http://localhost:8000/api/bot/query \
   -d '{"mensaje": "¿Qué entrené esta semana?"}'
 ```
 
-## Integración Alternativa: Bot Python Directo
+## Instalación del Bot
 
-Si prefieres un bot Python en lugar de n8n:
+```bash
+cd bot-matrix
+npm install
+npm install dotenv  # Para variables de entorno
 
-```python
-# bot_matrix.py
-import asyncio
-import httpx
-from nio import AsyncClient, RoomMessageText
-
-HOMESERVER = "https://matrix.juanmontoya.me"
-USER_ID = "@jarvis:matrix.juanmontoya.me"
-ACCESS_TOKEN = "20af94821288db22cd94af8c4cc1f38956ecd995f5a26abf8f8320459d926efd"
-ROOM_ID = "!IOCZuxbnlAhsDKcUvG:matrix.juanmontoya.me"
-TRENER_API = "http://localhost:8000"
-
-async def message_callback(room, event):
-    if event.sender == USER_ID:
-        return  # Ignorar mensajes propios
-    
-    async with httpx.AsyncClient() as client:
-        response = await client.post(
-            f"{TRENER_API}/api/bot/query",
-            json={"mensaje": event.body, "sender": event.sender}
-        )
-        data = response.json()
-        
-        # Enviar respuesta
-        await matrix_client.room_send(
-            room_id=ROOM_ID,
-            message_type="m.room.message",
-            content={"msgtype": "m.text", "body": data["respuesta"]}
-        )
-
-async def main():
-    global matrix_client
-    matrix_client = AsyncClient(HOMESERVER, USER_ID)
-    matrix_client.access_token = ACCESS_TOKEN
-    
-    matrix_client.add_event_callback(message_callback, RoomMessageText)
-    
-    await matrix_client.sync_forever(timeout=30000)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+# Crear .env con las credenciales
+# Luego ejecutar:
+node bot.js
 ```
 
-Instalar: `pip install matrix-nio httpx`
+## Ejecución con PM2 (producción)
+
+```bash
+pm2 start bot.js --name matrix-bot
+pm2 save
+```

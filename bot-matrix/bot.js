@@ -1,5 +1,6 @@
 const sdk = require('matrix-js-sdk');
 const axios = require('axios');
+require('dotenv').config();
 
 // Timestamp de inicio del bot para filtrar mensajes antiguos
 const BOT_START_TIME = Date.now();
@@ -16,17 +17,22 @@ const MAX_MESSAGES_PER_WINDOW = 5; // Máximo 5 mensajes por usuario cada 10 seg
 // Rate limiting: Map para rastrear mensajes por usuario
 const userMessageTimestamps = new Map();
 
-// ================== CONFIG ==================
-const HOMESERVER_URL = 'https://matrix.juanmontoya.me';
-const BOT_USER_ID = '@jarvis:matrix.juanmontoya.me';
-const ACCESS_TOKEN = '20af94821288db22cd94af8c4cc1f38956ecd995f5a26abf8f8320459d926efd';
+// ================== CONFIG (desde variables de entorno) ==================
+const HOMESERVER_URL = process.env.MATRIX_HOMESERVER || 'https://matrix.juanmontoya.me';
+const BOT_USER_ID = process.env.MATRIX_BOT_USER_ID || '@jarvis:matrix.juanmontoya.me';
+const ACCESS_TOKEN = process.env.MATRIX_ACCESS_TOKEN;
+
+if (!ACCESS_TOKEN) {
+    console.error('ERROR: MATRIX_ACCESS_TOKEN no está configurado');
+    process.exit(1);
+}
 
 // URLs de los servicios
-const TRENER_API_URL = 'http://localhost:8000'; // Backend de Trener en el mismo servidor
+const TRENER_API_URL = process.env.TRENER_API_URL || 'http://localhost:8000';
 const N8N_WEBHOOK_URL =
     N8N_ENV === 'test'
-        ? 'https://mi-n8n-app-b5870ec6a262.herokuapp.com/webhook-test/matrix'
-        : 'https://mi-n8n-app-b5870ec6a262.herokuapp.com/webhook/matrix';
+        ? process.env.N8N_WEBHOOK_TEST_URL || 'https://mi-n8n-app-b5870ec6a262.herokuapp.com/webhook-test/matrix'
+        : process.env.N8N_WEBHOOK_URL || 'https://mi-n8n-app-b5870ec6a262.herokuapp.com/webhook/matrix';
 
 // ================== KEYWORDS PARA DETECTAR TEMAS DE GYM ==================
 const GYM_KEYWORDS = [
