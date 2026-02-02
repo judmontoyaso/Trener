@@ -1,0 +1,41 @@
+name: Deploy Trener
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'bot-matrix/**'
+  workflow_dispatch:  # Permite ejecutar manualmente
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Agregar host conocido
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Desplegar Backend
+        run: |
+          scp -r backend/*.py ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/Trener/backend/
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "pm2 restart trener-backend"
+
+      - name: Desplegar Bot
+        run: |
+          scp bot-matrix/bot.js ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/matrix-bot/
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "pm2 restart matrix-bot"
+
+      - name: Verificar servicios
+        run: |
+          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "pm2 status"
