@@ -1910,7 +1910,7 @@ Responde en español, sé amigable y usa emojis. Basa tus respuestas en los DATO
             tools=OPENAI_TOOLS,
             tool_choice="auto",
             temperature=0.7,
-            max_tokens=1000,
+            max_tokens=2500,
         )
         
         assistant_message = response.choices[0].message
@@ -1938,7 +1938,7 @@ Responde en español, sé amigable y usa emojis. Basa tus respuestas en los DATO
                 model="gpt-4o-mini",
                 messages=messages,
                 temperature=0.7,
-                max_tokens=1000,
+                max_tokens=2500,
             )
             
             respuesta = response.choices[0].message.content.strip()

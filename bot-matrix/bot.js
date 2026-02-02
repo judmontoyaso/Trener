@@ -5,10 +5,7 @@ require('dotenv').config();
 // Timestamp de inicio del bot para filtrar mensajes antiguos
 const BOT_START_TIME = Date.now();
 
-const N8N_ENV = process.env.N8N_ENV || 'prod';
-
 // Configuración de robustez
-const N8N_TIMEOUT = 30000;
 const TRENER_TIMEOUT = 30000; // Más tiempo para AI
 const MAX_RETRIES = 3;
 const RATE_LIMIT_WINDOW = 10000;
@@ -29,10 +26,6 @@ if (!ACCESS_TOKEN) {
 }
 
 const TRENER_API_URL = process.env.TRENER_API_URL || 'http://localhost:8000';
-const N8N_WEBHOOK_URL =
-    N8N_ENV === 'test'
-        ? process.env.N8N_WEBHOOK_TEST_URL || 'https://mi-n8n-app-b5870ec6a262.herokuapp.com/webhook-test/matrix'
-        : process.env.N8N_WEBHOOK_URL || 'https://mi-n8n-app-b5870ec6a262.herokuapp.com/webhook/matrix';
 
 // ================== KEYWORDS PARA GYM ==================
 const GYM_KEYWORDS = [
@@ -396,58 +389,6 @@ async function processWithTrenerBasic(message, sender) {
     }
 }
 
-// ================== N8N ==================
-async function processWithN8N(message, sender, roomId) {
-    let lastError;
-    
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-            const response = await axios.post(N8N_WEBHOOK_URL, {
-                message,
-                sender,
-                roomId,
-                timestamp: Date.now()
-            }, {
-                timeout: N8N_TIMEOUT,
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-
-            console.log(`✅ Respuesta n8n (intento ${attempt})`);
-
-            if (typeof response.data === 'string') {
-                return response.data;
-            }
-
-            if (Array.isArray(response.data)) {
-                return response.data[0]?.text
-                    || response.data[0]?.message
-                    || JSON.stringify(response.data[0]);
-            }
-
-            if (typeof response.data === 'object') {
-                return response.data.text
-                    || response.data.message
-                    || JSON.stringify(response.data);
-            }
-
-            return 'Respuesta vacía del workflow';
-
-        } catch (err) {
-            lastError = err;
-            console.error(`❌ Error n8n (intento ${attempt}/${MAX_RETRIES}):`, err.message);
-            
-            if (attempt < MAX_RETRIES) {
-                const delay = Math.pow(2, attempt - 1) * 1000;
-                await sleep(delay);
-            }
-        }
-    }
-    
-    return 'Lo siento, el servicio está temporalmente no disponible.';
-}
-
 // ================== UTILS ==================
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -509,7 +450,6 @@ async function start() {
     try {
         console.log('🚀 Iniciando Trener Bot AI...');
         console.log(`📍 Trener API: ${TRENER_API_URL}`);
-        console.log(`📍 n8n: ${N8N_WEBHOOK_URL}`);
 
         await client.startClient({
             initialSyncLimit: 1
