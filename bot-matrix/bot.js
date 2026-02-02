@@ -211,12 +211,26 @@ async function processWithTrenerAI(message, sender) {
             }
         }
         
-        // === CHAT NORMAL CON AI ===
+        // === DETECTAR SI NECESITA CONSULTAR BASE DE DATOS ===
+        // Usar MCP para preguntas sobre datos/historial
+        const necesitaMCP = [
+            'cuánto', 'cuanto', 'cuántas', 'cuantas',
+            'mi progreso', 'mi historial', 'mis entrenamientos',
+            'último', 'ultima', 'pasado', 'anterior',
+            'pr', 'récord', 'record', 'máximo', 'maximo',
+            'esta semana', 'semana pasada',
+            'he hecho', 'hice', 'entrené',
+            'busca', 'encuentra', 'muéstrame', 'muestrame'
+        ].some(k => msgLower.includes(k));
         
         // Obtener contexto previo de la conversación
         const contexto = conversationContext.get(sender) || [];
         
-        const response = await axios.post(`${TRENER_API_URL}/api/chat`, {
+        // Usar endpoint MCP si necesita consultar datos
+        const endpoint = necesitaMCP ? '/api/chat/mcp' : '/api/chat';
+        console.log(`🔧 Usando endpoint: ${endpoint} (necesitaMCP: ${necesitaMCP})`);
+        
+        const response = await axios.post(`${TRENER_API_URL}${endpoint}`, {
             mensaje: message,
             contexto: contexto
         }, {

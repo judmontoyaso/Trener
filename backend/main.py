@@ -6,9 +6,26 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Union
 from datetime import date, datetime, timedelta
 import os
+import json
 from dotenv import load_dotenv
 from openai import OpenAI
 import httpx
+
+# Importar MCP de MongoDB
+from mcp_mongo import (
+    MCP_TOOLS, 
+    ejecutar_herramienta, 
+    listar_herramientas,
+    listar_entrenamientos,
+    buscar_ejercicio,
+    obtener_estadisticas_generales,
+    calcular_progreso_ejercicio,
+    obtener_prs as mcp_obtener_prs,
+    consulta_personalizada,
+    agregacion_personalizada,
+    resumen_semanal,
+    comparar_semanas
+)
 
 load_dotenv()
 
@@ -1666,6 +1683,279 @@ Responde en español."""
             "respuesta": f"Ups, algo salió mal. ¿Puedes reformular tu pregunta? 🤔",
             "tipo": "error",
             "error": str(e)
+        }
+
+
+# ================= MCP MONGODB - ENDPOINTS =================
+
+class MCPRequest(BaseModel):
+    herramienta: str
+    parametros: Optional[dict] = {}
+
+
+@app.get("/api/mcp/herramientas")
+def get_mcp_herramientas():
+    """Lista todas las herramientas MCP disponibles"""
+    return listar_herramientas()
+
+
+@app.post("/api/mcp/ejecutar")
+def ejecutar_mcp(request: MCPRequest):
+    """Ejecuta una herramienta MCP específica"""
+    return ejecutar_herramienta(request.herramienta, **request.parametros)
+
+
+@app.get("/api/mcp/estadisticas")
+def mcp_estadisticas():
+    """Estadísticas generales vía MCP"""
+    return obtener_estadisticas_generales()
+
+
+@app.get("/api/mcp/prs")
+def mcp_prs():
+    """PRs del usuario vía MCP"""
+    return mcp_obtener_prs()
+
+
+@app.get("/api/mcp/progreso/{ejercicio}")
+def mcp_progreso(ejercicio: str):
+    """Progreso de un ejercicio específico"""
+    return calcular_progreso_ejercicio(ejercicio)
+
+
+@app.get("/api/mcp/comparar-semanas")
+def mcp_comparar():
+    """Comparativa semanal vía MCP"""
+    return comparar_semanas()
+
+
+@app.get("/api/mcp/resumen-semana")
+def mcp_resumen(semanas_atras: int = 0):
+    """Resumen de una semana específica"""
+    return resumen_semanal(semanas_atras)
+
+
+# ================= CHAT CON FUNCTION CALLING (MCP) =================
+
+# Definición de tools para OpenAI
+OPENAI_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "listar_entrenamientos",
+            "description": "Lista los entrenamientos del usuario con filtros opcionales",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limite": {"type": "integer", "description": "Máximo de resultados", "default": 10},
+                    "tipo": {"type": "string", "description": "Tipo de entrenamiento (push, pull, legs, etc.)"},
+                    "desde_fecha": {"type": "string", "description": "Fecha inicio YYYY-MM-DD"},
+                    "hasta_fecha": {"type": "string", "description": "Fecha fin YYYY-MM-DD"}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "buscar_ejercicio",
+            "description": "Busca un ejercicio específico en el historial del usuario",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre": {"type": "string", "description": "Nombre del ejercicio a buscar"},
+                    "limite": {"type": "integer", "description": "Máximo de resultados", "default": 20}
+                },
+                "required": ["nombre"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "calcular_progreso",
+            "description": "Calcula el progreso de un ejercicio (pesos, tendencia, PRs)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "nombre": {"type": "string", "description": "Nombre del ejercicio"}
+                },
+                "required": ["nombre"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "obtener_estadisticas",
+            "description": "Obtiene estadísticas generales del usuario (total entrenamientos, grupos, etc.)",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "obtener_prs",
+            "description": "Obtiene los récords personales (PRs) del usuario",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "comparar_semanas",
+            "description": "Compara métricas de esta semana vs la semana pasada",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "resumen_semanal",
+            "description": "Obtiene el resumen detallado de una semana",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "semanas_atras": {"type": "integer", "description": "0=esta semana, 1=semana pasada, etc.", "default": 0}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consulta_mongodb",
+            "description": "Ejecuta una consulta personalizada en MongoDB. Útil para búsquedas complejas.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "coleccion": {"type": "string", "description": "Colección: gimnasio, entrenamiento_activo, logros"},
+                    "filtro": {"type": "object", "description": "Filtro MongoDB"},
+                    "limite": {"type": "integer", "default": 10}
+                },
+                "required": ["coleccion", "filtro"]
+            }
+        }
+    }
+]
+
+
+def ejecutar_tool_call(tool_name: str, arguments: dict) -> str:
+    """Ejecuta una herramienta y devuelve el resultado como string"""
+    try:
+        if tool_name == "listar_entrenamientos":
+            result = listar_entrenamientos(**arguments)
+        elif tool_name == "buscar_ejercicio":
+            result = buscar_ejercicio(**arguments)
+        elif tool_name == "calcular_progreso":
+            result = calcular_progreso_ejercicio(**arguments)
+        elif tool_name == "obtener_estadisticas":
+            result = obtener_estadisticas_generales()
+        elif tool_name == "obtener_prs":
+            result = mcp_obtener_prs()
+        elif tool_name == "comparar_semanas":
+            result = comparar_semanas()
+        elif tool_name == "resumen_semanal":
+            result = resumen_semanal(**arguments)
+        elif tool_name == "consulta_mongodb":
+            result = consulta_personalizada(**arguments)
+        else:
+            result = {"error": f"Herramienta no encontrada: {tool_name}"}
+        
+        return json.dumps(result, ensure_ascii=False, default=str)
+    except Exception as e:
+        return json.dumps({"error": str(e)})
+
+
+class ChatMCPRequest(BaseModel):
+    mensaje: str
+    contexto: Optional[List[dict]] = None
+
+
+@app.post("/api/chat/mcp")
+async def chat_con_mcp(request: ChatMCPRequest):
+    """
+    Chat inteligente con acceso a herramientas MCP.
+    El agente puede consultar la base de datos directamente.
+    """
+    try:
+        system_prompt = """Eres el asistente de entrenamiento Trener AI, experto en HIPERTROFIA MASCULINA.
+
+TIENES ACCESO A HERRAMIENTAS para consultar la base de datos del usuario:
+- Puedes ver su historial de entrenamientos
+- Puedes buscar ejercicios específicos
+- Puedes calcular progreso y PRs
+- Puedes hacer consultas personalizadas a MongoDB
+
+SIEMPRE usa las herramientas cuando el usuario pregunte sobre:
+- Sus entrenamientos pasados
+- Progreso en un ejercicio
+- Cuánto levantó en X ejercicio
+- Comparativas semanales
+- PRs o récords
+
+Responde en español, sé amigable y usa emojis. Basa tus respuestas en los DATOS REALES del usuario."""
+
+        messages = [{"role": "system", "content": system_prompt}]
+        
+        if request.contexto:
+            messages.extend(request.contexto[-6:])
+        
+        messages.append({"role": "user", "content": request.mensaje})
+        
+        # Primera llamada - puede pedir tools
+        response = openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages,
+            tools=OPENAI_TOOLS,
+            tool_choice="auto",
+            temperature=0.7,
+            max_tokens=1000,
+        )
+        
+        assistant_message = response.choices[0].message
+        
+        # Si hay tool calls, ejecutarlas
+        if assistant_message.tool_calls:
+            messages.append(assistant_message)
+            
+            for tool_call in assistant_message.tool_calls:
+                function_name = tool_call.function.name
+                arguments = json.loads(tool_call.function.arguments)
+                
+                print(f"[MCP] Ejecutando: {function_name}({arguments})")
+                
+                result = ejecutar_tool_call(function_name, arguments)
+                
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result
+                })
+            
+            # Segunda llamada con los resultados
+            response = openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=messages,
+                temperature=0.7,
+                max_tokens=1000,
+            )
+            
+            respuesta = response.choices[0].message.content.strip()
+        else:
+            respuesta = assistant_message.content.strip()
+        
+        return {
+            "respuesta": respuesta,
+            "tipo": "chat_mcp",
+            "tools_usados": [tc.function.name for tc in (assistant_message.tool_calls or [])]
+        }
+        
+    except Exception as e:
+        print(f"[MCP ERROR] {e}")
+        return {
+            "respuesta": f"Error: {str(e)}",
+            "tipo": "error"
         }
 
 
