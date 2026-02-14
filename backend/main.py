@@ -40,19 +40,16 @@ load_dotenv()
 
 app = FastAPI(title="Trener API", description="API para gestionar entrenamientos de gimnasio")
 
-# CORS - Solo para desarrollo local. En producción nginx maneja CORS.
-if not os.getenv("DISABLE_CORS"):
-    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=CORS_ORIGINS,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-    logger.info(f"CORS habilitado para: {CORS_ORIGINS}")
-else:
-    logger.info("CORS deshabilitado (manejado por nginx)")
+# CORS - Deshabilitado porque nginx ya lo maneja en producción
+# Si corres localmente, descomenta esto:
+# CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=CORS_ORIGINS,
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
 
 # MongoDB connection
 MONGO_URI = os.getenv("MONGO_URI")
