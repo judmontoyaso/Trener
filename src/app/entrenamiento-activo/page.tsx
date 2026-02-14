@@ -102,7 +102,7 @@ export default function EntrenamientoActivoPage() {
       console.log('Entrenamiento cargado:', data);
       
       if (data.activo && data.entrenamiento) {
-        setEntrenamiento(data.entrenamiento);
+        setEntrenamiento(data.entrenamiento as EntrenamientoActivo);
         setTiempoInicio(new Date(data.entrenamiento.inicio));
         
         // Establecer peso inicial sugerido

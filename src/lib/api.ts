@@ -99,14 +99,14 @@ export async function generarRutina(params: {
 
 export async function fetchEntrenamientoActivo(): Promise<{
   activo: boolean;
-  entrenamiento: Entrenamiento | null;
+  entrenamiento: Record<string, unknown> | null;
 }> {
   return apiFetch('/api/entrenamiento-activo');
 }
 
 export async function iniciarEntrenamientoActivo(
   entrenamiento: Entrenamiento
-): Promise<{ success: boolean; entrenamiento_activo: Entrenamiento }> {
+): Promise<{ success: boolean; entrenamiento_activo: Record<string, unknown> }> {
   return apiFetch('/api/entrenamiento-activo/iniciar', {
     method: 'POST',
     body: JSON.stringify(entrenamiento),
