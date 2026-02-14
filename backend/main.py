@@ -42,10 +42,13 @@ app = FastAPI(title="Trener API", description="API para gestionar entrenamientos
 
 # CORS - Automático: se activa en desarrollo, se desactiva si DISABLE_CORS=1 (nginx en prod)
 if not os.getenv("DISABLE_CORS"):
-    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
+    _default_origins = "http://localhost:3000,http://localhost:3001,https://trener.vercel.app"
+    CORS_ORIGINS = os.getenv("CORS_ORIGINS", _default_origins).split(",")
+    # Incluir cualquier subdominio de vercel.app
     app.add_middleware(
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,
+        allow_origin_regex=r"https://.*\.vercel\.app",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

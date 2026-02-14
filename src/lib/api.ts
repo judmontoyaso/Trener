@@ -13,8 +13,9 @@ import type {
 } from '@/types';
 
 // ---- Configuración ----
-
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// En producción (Vercel), las llamadas van por los API routes de Next.js (server-side proxy).
+// En desarrollo local, se puede usar NEXT_PUBLIC_API_URL para apuntar al backend directamente.
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
 class ApiError extends Error {
   status: number;
