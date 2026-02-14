@@ -102,11 +102,12 @@ export default function EntrenamientoActivoPage() {
       console.log('Entrenamiento cargado:', data);
       
       if (data.activo && data.entrenamiento) {
-        setEntrenamiento(data.entrenamiento as EntrenamientoActivo);
-        setTiempoInicio(new Date(data.entrenamiento.inicio));
+        const ent = data.entrenamiento as unknown as EntrenamientoActivo;
+        setEntrenamiento(ent);
+        setTiempoInicio(new Date(ent.inicio));
         
         // Establecer peso inicial sugerido
-        const ejercicio = data.entrenamiento.ejercicios[0];
+        const ejercicio = ent.ejercicios[0];
         if (ejercicio) {
           const pesoSugerido = ejercicio.peso_sugerido;
           console.log('Peso sugerido ejercicio 0:', pesoSugerido);
