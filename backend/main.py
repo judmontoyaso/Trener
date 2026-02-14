@@ -465,8 +465,7 @@ IMPORTANTE:
                 {"role": "system", "content": "Eres un entrenador experto. Solo respondes con JSON válido."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=2000,
+            max_completion_tokens=2000,
         )
 
         respuesta = completion.choices[0].message.content.strip()
@@ -1580,8 +1579,7 @@ Responde en español de forma natural y motivadora:"""
                 {"role": "system", "content": "Eres un coach de fitness amigable y motivador. Respuestas cortas y directas."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.8,
-            max_tokens=200,
+            max_completion_tokens=200,
         )
         
         resumen_ai = completion.choices[0].message.content.strip()
@@ -1728,8 +1726,7 @@ Responde en español."""
         completion = openai_client.chat.completions.create(
             model="gpt-5-mini",
             messages=messages,
-            temperature=0.7,
-            max_tokens=3500,
+            max_completion_tokens=3500,
         )
         
         respuesta = completion.choices[0].message.content.strip()
@@ -1971,8 +1968,7 @@ Responde en español, sé amigable y usa emojis. Basa tus respuestas en los DATO
             messages=messages,
             tools=OPENAI_TOOLS,
             tool_choice="auto",
-            temperature=0.7,
-            max_tokens=3500,
+            max_completion_tokens=3500,
         )
         
         assistant_message = response.choices[0].message
@@ -1999,8 +1995,7 @@ Responde en español, sé amigable y usa emojis. Basa tus respuestas en los DATO
             response = openai_client.chat.completions.create(
                 model="gpt-5-mini",
                 messages=messages,
-                temperature=0.7,
-                max_tokens=3500,
+                max_completion_tokens=3500,
             )
             
             respuesta = response.choices[0].message.content.strip()
@@ -2207,8 +2202,7 @@ Responde SOLO con un JSON válido (sin markdown):
         completion = openai_client.chat.completions.create(
             model="gpt-5-mini",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=500,
+            max_completion_tokens=500,
         )
         
         respuesta_ai = completion.choices[0].message.content.strip()
