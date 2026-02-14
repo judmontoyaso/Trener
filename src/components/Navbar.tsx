@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import clsx from 'clsx';
+import { fetchEntrenamientoActivo } from '@/lib/api';
 
 const navItems = [
   { href: '/', label: 'Inicio', icon: BarChart3 },
@@ -24,8 +25,7 @@ export default function Navbar() {
     // Verificar si hay entrenamiento activo
     const checkEntrenamientoActivo = async () => {
       try {
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/entrenamiento-activo`);
-        const data = await response.json();
+        const data = await fetchEntrenamientoActivo();
         setHayEntrenamientoActivo(data.activo === true);
       } catch {
         setHayEntrenamientoActivo(false);

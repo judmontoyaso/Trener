@@ -3,50 +3,53 @@
 import { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import WorkoutCard from '@/components/WorkoutCard';
-import { fetchEntrenamientos, fetchEstadisticas } from '@/lib/api';
-import { Entrenamiento } from '@/types';
+import LoadingScreen from '@/components/ui/LoadingScreen';
+import ErrorScreen from '@/components/ui/ErrorScreen';
+import { fetchEntrenamientos, fetchEstadisticas, fetchResumenInteligente, fetchComparativaSemanal } from '@/lib/api';
+import type { Entrenamiento, Estadisticas, ResumenAI, ComparativaSemanal } from '@/types';
 import { 
-  ArrowRight, Sparkles, Loader2, Dumbbell, Target, 
+  ArrowRight, Sparkles, Dumbbell, Target, 
   Flame, Calendar, TrendingUp, TrendingDown, Trophy,
-  Zap, Brain
+  Brain
 } from 'lucide-react';
 import Link from 'next/link';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
 export default function Home() {
   const [entrenamientos, setEntrenamientos] = useState<Entrenamiento[]>([]);
-  const [estadisticas, setEstadisticas] = useState<any>(null);
-  const [resumenAI, setResumenAI] = useState<any>(null);
-  const [comparativa, setComparativa] = useState<any>(null);
+  const [estadisticas, setEstadisticas] = useState<Estadisticas | null>(null);
+  const [resumenAI, setResumenAI] = useState<ResumenAI | null>(null);
+  const [comparativa, setComparativa] = useState<ComparativaSemanal | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const [entrs, stats] = await Promise.all([
-          fetchEntrenamientos(),
-          fetchEstadisticas(),
-        ]);
-        setEntrenamientos(entrs);
-        setEstadisticas(stats);
-        
-        // Cargar resumen AI y comparativa en paralelo
-        Promise.all([
-          fetch(`${API_URL}/api/metricas/resumen-inteligente`).then(r => r.json()),
-          fetch(`${API_URL}/api/metricas/comparativa-semanal`).then(r => r.json())
-        ]).then(([resumen, comp]) => {
-          setResumenAI(resumen);
-          setComparativa(comp);
-        }).catch(console.error);
-        
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error al cargar datos');
-      } finally {
-        setLoading(false);
-      }
+  const loadData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [entrs, stats] = await Promise.all([
+        fetchEntrenamientos(),
+        fetchEstadisticas(),
+      ]);
+      setEntrenamientos(entrs);
+      setEstadisticas(stats);
+      
+      // Cargar resumen AI y comparativa en paralelo (no-blocking)
+      Promise.all([
+        fetchResumenInteligente(),
+        fetchComparativaSemanal()
+      ]).then(([resumen, comp]) => {
+        setResumenAI(resumen);
+        setComparativa(comp);
+      }).catch(console.error);
+      
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al cargar datos');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  useEffect(() => {
     loadData();
   }, []);
 
@@ -55,31 +58,11 @@ export default function Home() {
     .slice(0, 4);
 
   if (loading) {
-    return (
-      <>
-        <Navbar />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <Loader2 className="w-8 h-8 animate-spin text-gym-purple" />
-            <span className="ml-3 text-gray-400">Cargando tu dashboard...</span>
-          </div>
-        </main>
-      </>
-    );
+    return <LoadingScreen message="Cargando tu dashboard..." />;
   }
 
   if (error) {
-    return (
-      <>
-        <Navbar />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-6 text-center">
-            <p className="text-red-300 text-lg">{error}</p>
-            <p className="text-gray-400 mt-2">Verifica la conexión con el backend</p>
-          </div>
-        </main>
-      </>
-    );
+    return <ErrorScreen message={error} onRetry={loadData} />;
   }
 
   const racha = resumenAI?.racha?.racha_actual || 0;
@@ -268,7 +251,7 @@ function StatCard({
   label: string;
   value: number;
   suffix?: string;
-  icon: any;
+  icon: React.ComponentType<{ className?: string }>;
   color: 'purple' | 'orange' | 'green' | 'blue';
   trend?: number;
 }) {

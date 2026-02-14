@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Navbar from '@/components/Navbar';
+import { fetchPerfilGamificacion, fetchLogros } from '@/lib/api';
+import type { Logro, PerfilGamificacion } from '@/types';
 import { 
   Trophy, 
   Star, 
@@ -10,29 +13,12 @@ import {
   CheckCircle2,
   Sparkles,
   Medal,
-  Crown
+  Crown,
+  Loader2
 } from "lucide-react";
 
-interface Logro {
-  id: string;
-  nombre: string;
-  descripcion: string;
-  xp: number;
-  desbloqueado: boolean;
-}
-
-interface Perfil {
-  nivel: number;
-  titulo: string;
-  xp: number;
-  xp_siguiente_nivel: number;
-  logros_desbloqueados: string[];
-  total_logros: number;
-  nuevos_logros: Array<{ nombre: string; descripcion: string; xp: number }>;
-}
-
 export default function LogrosPage() {
-  const [perfil, setPerfil] = useState<Perfil | null>(null);
+  const [perfil, setPerfil] = useState<PerfilGamificacion | null>(null);
   const [logros, setLogros] = useState<Logro[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewLogro, setShowNewLogro] = useState<{ nombre: string; descripcion: string; xp: number } | null>(null);
@@ -41,17 +27,12 @@ export default function LogrosPage() {
     cargarDatos();
   }, []);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
   async function cargarDatos() {
     try {
-      const [perfilRes, logrosRes] = await Promise.all([
-        fetch(`${API_URL}/api/gamificacion/perfil`),
-        fetch(`${API_URL}/api/gamificacion/logros`)
+      const [perfilData, logrosData] = await Promise.all([
+        fetchPerfilGamificacion(),
+        fetchLogros()
       ]);
-
-      const perfilData = await perfilRes.json();
-      const logrosData = await logrosRes.json();
 
       setPerfil(perfilData);
       setLogros(logrosData.logros || []);
@@ -83,9 +64,13 @@ export default function LogrosPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-500" />
-      </div>
+      <>
+        <Navbar />
+        <div className="min-h-screen bg-gym-darker flex items-center justify-center">
+          <Loader2 className="w-8 h-8 animate-spin text-gym-purple" />
+          <span className="ml-3 text-gray-400">Cargando logros...</span>
+        </div>
+      </>
     );
   }
 
@@ -93,7 +78,10 @@ export default function LogrosPage() {
   const logrosDesbloqueados = logros.filter(l => l.desbloqueado).length;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-6">
+    <>
+    <Navbar />
+    <div className="min-h-screen bg-gym-darker text-white p-6">
+      <div className="max-w-4xl mx-auto">
       {/* Modal de nuevo logro */}
       {showNewLogro && (
         <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 animate-fadeIn">
@@ -231,6 +219,8 @@ export default function LogrosPage() {
           {logrosDesbloqueados >= 10 && "¡Eres una leyenda del gym! 🏆"}
         </p>
       </div>
+      </div>
     </div>
+    </>
   );
 }

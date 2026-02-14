@@ -1,8 +1,9 @@
 'use client';
 
 import Navbar from '@/components/Navbar';
-import { TIPOS_ENTRENAMIENTO, GRUPOS_MUSCULARES, Entrenamiento } from '@/types';
-import { generarRutina, crearEntrenamiento } from '@/lib/api';
+import { TIPOS_ENTRENAMIENTO, GRUPOS_MUSCULARES } from '@/types';
+import type { Entrenamiento } from '@/types';
+import { generarRutina, crearEntrenamiento, iniciarEntrenamientoActivo } from '@/lib/api';
 import { Sparkles, Loader2, Copy, Check, Download, Play } from 'lucide-react';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
@@ -74,17 +75,7 @@ export default function GenerarPage() {
     
     setIniciando(true);
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/entrenamiento-activo/iniciar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rutinaGenerada),
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.detail || 'Error al iniciar entrenamiento');
-      }
-      
+      await iniciarEntrenamientoActivo(rutinaGenerada);
       router.push('/entrenamiento-activo');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al iniciar');

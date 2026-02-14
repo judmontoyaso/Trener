@@ -47,6 +47,133 @@ export interface Equipamiento {
   ejercicios_posibles: string[];
 }
 
+// ---- Estadísticas ----
+
+export interface Estadisticas {
+  totalEntrenamientos: number;
+  totalEjercicios: number;
+  ejerciciosUnicos: number;
+  diasEntrenados: number;
+  porTipo: Record<string, number>;
+  porGrupo: Record<string, number>;
+}
+
+// ---- Resumen AI ----
+
+export interface NivelUsuario {
+  nivel: number;
+  titulo: string;
+  xp: number;
+}
+
+export interface RachaInfo {
+  racha_actual: number;
+  mejor_racha: number;
+}
+
+export interface ResumenSemana {
+  entrenamientos: number;
+  grupos_trabajados: string[];
+  total_series: number;
+  dias_restantes: number;
+}
+
+export interface ResumenAI {
+  resumen_ai: string;
+  stats?: Estadisticas;
+  racha?: RachaInfo;
+  semana?: ResumenSemana;
+  comparativa?: ComparativaSemanal;
+  nivel?: NivelUsuario;
+  error?: string;
+}
+
+// ---- Comparativa Semanal ----
+
+export interface DatosSemana {
+  entrenamientos: number;
+  series: number;
+  ejercicios: number;
+  volumen: number;
+}
+
+export interface ComparativaSemanal {
+  esta_semana: DatosSemana;
+  semana_pasada: DatosSemana;
+  cambio: {
+    entrenamientos: number;
+    series: number;
+    ejercicios: number;
+    volumen: number;
+  };
+}
+
+// ---- Progreso ----
+
+export interface ProgresoEjercicio {
+  fecha: string;
+  peso: number;
+  series: number;
+  repeticiones: number | number[];
+}
+
+export interface VolumenSemanal {
+  semana: string;
+  series: number;
+  ejercicios: number;
+  entrenamientos: number;
+}
+
+export interface EjercicioFrecuente {
+  nombre: string;
+  veces: number;
+  ultimo_peso: number | null;
+  max_peso: number;
+  promedio_peso?: number;
+  primera_fecha?: string;
+  ultima_fecha?: string;
+}
+
+export interface OneRmEstimacion {
+  ejercicio: string;
+  peso_usado: number;
+  repeticiones: number;
+  rm_estimado: number;
+  fecha: string;
+}
+
+// ---- Gamificación ----
+
+export interface Logro {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  xp: number;
+  desbloqueado: boolean;
+}
+
+export interface PerfilGamificacion {
+  nivel: number;
+  titulo: string;
+  xp: number;
+  xp_siguiente_nivel: number;
+  logros_desbloqueados: string[];
+  total_logros: number;
+  nuevos_logros: Array<{ nombre: string; descripcion: string; xp: number }>;
+}
+
+// ---- Chat ----
+
+export interface ChatResponse {
+  respuesta: string;
+  tipo: 'chat' | 'chat_mcp' | 'rutina_generada' | 'error';
+  rutina?: Entrenamiento;
+  tools_usados?: string[];
+  contexto_actualizado?: Array<{ role: string; content: string }>;
+}
+
+// ---- Constantes ----
+
 export interface GrupoMuscular {
   id: string;
   nombre: string;
@@ -68,7 +195,14 @@ export const GRUPOS_MUSCULARES: GrupoMuscular[] = [
   { id: 'core', nombre: 'Core', color: 'bg-amber-500', icon: '🎯' },
 ];
 
-export const TIPOS_ENTRENAMIENTO = [
+export interface TipoEntrenamiento {
+  id: string;
+  nombre: string;
+  descripcion: string;
+  color: string;
+}
+
+export const TIPOS_ENTRENAMIENTO: TipoEntrenamiento[] = [
   { id: 'push', nombre: 'Push', descripcion: 'Pecho, Hombro, Tríceps', color: 'from-red-500 to-orange-500' },
   { id: 'pull', nombre: 'Pull', descripcion: 'Espalda, Bíceps', color: 'from-blue-500 to-cyan-500' },
   { id: 'pierna', nombre: 'Pierna', descripcion: 'Cuádriceps, Femoral, Glúteos', color: 'from-green-500 to-teal-500' },

@@ -2,6 +2,22 @@
 
 import { useState, useEffect } from "react";
 import Navbar from "@/components/Navbar";
+import LoadingScreen from "@/components/ui/LoadingScreen";
+import {
+  fetchVolumenSemanal,
+  fetchProgresoGrupos,
+  fetchEjerciciosFrecuentes,
+  fetchOneRm,
+  fetchComparativaSemanal,
+  fetchProgresoEjercicio
+} from "@/lib/api";
+import type {
+  ProgresoEjercicio,
+  VolumenSemanal,
+  EjercicioFrecuente,
+  OneRmEstimacion,
+  ComparativaSemanal
+} from "@/types";
 import { 
   TrendingUp, 
   Target, 
@@ -17,39 +33,9 @@ import {
   Loader2
 } from "lucide-react";
 
-interface ProgresoEjercicio {
-  fecha: string;
-  peso: number;
-  series: number;
-  repeticiones: number | number[];
-}
-
-interface VolumenSemanal {
-  semana: string;
-  series: number;
-  ejercicios: number;
-  entrenamientos: number;
-}
-
 interface GrupoData {
   entrenamientos: number;
   series: number;
-}
-
-interface EjercicioFrecuente {
-  nombre: string;
-  veces: number;
-  ultimo_peso: number | null;
-  max_peso: number;
-  promedio_peso?: number;
-}
-
-interface OnermData {
-  ejercicio: string;
-  peso_usado: number;
-  repeticiones: number;
-  rm_estimado: number;
-  fecha: string;
 }
 
 export default function ProgresoPage() {
@@ -59,8 +45,8 @@ export default function ProgresoPage() {
   const [volumenSemanal, setVolumenSemanal] = useState<VolumenSemanal[]>([]);
   const [porGrupo, setPorGrupo] = useState<Record<string, GrupoData>>({});
   const [ejerciciosFrecuentes, setEjerciciosFrecuentes] = useState<EjercicioFrecuente[]>([]);
-  const [oneRmData, setOneRmData] = useState<OnermData[]>([]);
-  const [comparativa, setComparativa] = useState<any>(null);
+  const [oneRmData, setOneRmData] = useState<OneRmEstimacion[]>([]);
+  const [comparativa, setComparativa] = useState<ComparativaSemanal | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Filtrar ejercicios según búsqueda
@@ -78,23 +64,15 @@ export default function ProgresoPage() {
     }
   }, [ejercicioSeleccionado]);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
   async function cargarDatos() {
     try {
-      const [volumenRes, gruposRes, frecuentesRes, oneRmRes, compRes] = await Promise.all([
-        fetch(`${API_URL}/api/progreso/volumen`),
-        fetch(`${API_URL}/api/progreso/grupos`),
-        fetch(`${API_URL}/api/progreso/ejercicios-frecuentes`),
-        fetch(`${API_URL}/api/metricas/1rm`),
-        fetch(`${API_URL}/api/metricas/comparativa-semanal`)
+      const [volumenData, gruposData, frecuentesData, oneRmDataRes, compData] = await Promise.all([
+        fetchVolumenSemanal(),
+        fetchProgresoGrupos(),
+        fetchEjerciciosFrecuentes(),
+        fetchOneRm(),
+        fetchComparativaSemanal()
       ]);
-
-      const volumenData = await volumenRes.json();
-      const gruposData = await gruposRes.json();
-      const frecuentesData = await frecuentesRes.json();
-      const oneRmDataRes = await oneRmRes.json();
-      const compData = await compRes.json();
 
       setVolumenSemanal(volumenData.volumen_semanal || []);
       setPorGrupo(gruposData.por_grupo || {});
@@ -115,8 +93,7 @@ export default function ProgresoPage() {
 
   async function cargarProgresoEjercicio(nombre: string) {
     try {
-      const res = await fetch(`${API_URL}/api/progreso/ejercicio/${encodeURIComponent(nombre)}`);
-      const data = await res.json();
+      const data = await fetchProgresoEjercicio(nombre);
       setProgresoEjercicio(data.progreso || []);
     } catch (error) {
       console.error("Error cargando progreso:", error);
@@ -151,15 +128,7 @@ export default function ProgresoPage() {
   );
 
   if (loading) {
-    return (
-      <>
-        <Navbar />
-        <div className="min-h-screen bg-gym-bg flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-gym-purple" />
-          <span className="ml-3 text-gray-400">Cargando tu progreso...</span>
-        </div>
-      </>
-    );
+    return <LoadingScreen message="Cargando tu progreso..." />;
   }
 
   return (

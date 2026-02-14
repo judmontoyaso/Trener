@@ -55,8 +55,53 @@ body {
   }
 }
 
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out forwards;
+}
+
+.animate-slideInRight {
+  animation: slideInRight 0.3s ease-out forwards;
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.2s ease-out forwards;
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.05) 50%, transparent 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
 }
 
 /* Card hover effects */
@@ -67,4 +112,29 @@ body {
 .workout-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 20px 40px rgba(124, 58, 237, 0.2);
+}
+
+/* Stagger animations for lists */
+.stagger-item {
+  opacity: 0;
+  animation: fadeIn 0.3s ease-out forwards;
+}
+
+.stagger-item:nth-child(1) { animation-delay: 0.05s; }
+.stagger-item:nth-child(2) { animation-delay: 0.1s; }
+.stagger-item:nth-child(3) { animation-delay: 0.15s; }
+.stagger-item:nth-child(4) { animation-delay: 0.2s; }
+.stagger-item:nth-child(5) { animation-delay: 0.25s; }
+.stagger-item:nth-child(6) { animation-delay: 0.3s; }
+.stagger-item:nth-child(7) { animation-delay: 0.35s; }
+.stagger-item:nth-child(8) { animation-delay: 0.4s; }
+
+/* Custom focus styles */
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-gym-purple/50 focus:border-gym-purple;
+}
+
+/* Skeleton loading */
+.skeleton {
+  @apply bg-white/5 rounded-lg animate-shimmer;
 }

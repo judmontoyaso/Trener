@@ -7,9 +7,18 @@ from typing import List, Optional, Union
 from datetime import date, datetime, timedelta
 import os
 import json
+import logging
 from dotenv import load_dotenv
 from openai import OpenAI
 import httpx
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("trener")
 
 # Importar MCP de MongoDB
 from mcp_mongo import (
@@ -31,16 +40,19 @@ load_dotenv()
 
 app = FastAPI(title="Trener API", description="API para gestionar entrenamientos de gimnasio")
 
-# CORS - Deshabilitado porque nginx ya lo maneja en producción
-# Si corres localmente, descomenta esto:
-# CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=CORS_ORIGINS,
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
+# CORS - Automático: se activa en desarrollo, se desactiva si DISABLE_CORS=1 (nginx en prod)
+if not os.getenv("DISABLE_CORS"):
+    CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001").split(",")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+    logger.info(f"CORS habilitado para: {CORS_ORIGINS}")
+else:
+    logger.info("CORS deshabilitado (manejado por nginx)")
 
 # MongoDB connection
 MONGO_URI = os.getenv("MONGO_URI")
@@ -150,7 +162,7 @@ class Equipamiento(BaseModel):
 async def enviar_mensaje_matrix(mensaje: str) -> bool:
     """Envía un mensaje a Matrix"""
     if not MATRIX_ACCESS_TOKEN or not MATRIX_ROOM_ID:
-        print("Matrix no configurado")
+        logger.warning("Matrix no configurado (faltan MATRIX_ACCESS_TOKEN o MATRIX_ROOM_ID)")
         return False
     
     try:
@@ -166,10 +178,10 @@ async def enviar_mensaje_matrix(mensaje: str) -> bool:
         
         async with httpx.AsyncClient() as http_client:
             response = await http_client.post(url, json=body, headers=headers)
-            print(f"Matrix response: {response.status_code}")
+            logger.info(f"Matrix response: {response.status_code}")
             return response.status_code == 200
     except Exception as e:
-        print(f"Error enviando a Matrix: {e}")
+        logger.error(f"Error enviando a Matrix: {e}")
         return False
 
 
@@ -189,6 +201,62 @@ def serialize_doc(doc) -> dict:
 @app.get("/")
 def root():
     return {"message": "Trener API - Backend para gestión de entrenamientos"}
+
+
+@app.get("/api/health")
+def health_check():
+    """Health check para monitoreo"""
+    try:
+        # Verificar conexión a MongoDB
+        client.admin.command("ping")
+        return {
+            "status": "healthy",
+            "database": "connected",
+            "version": "1.1.0"
+        }
+    except Exception as e:
+        logger.error(f"Health check fallido: {e}")
+        return {
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e)
+        }
+
+
+# ---- Utilidades compartidas ----
+
+PALABRAS_IGNORAR = {'de', 'con', 'en', 'la', 'el', 'las', 'los', 'a', 'y', 'o', 'para', 'al'}
+
+
+def extraer_palabras_clave(texto: str) -> List[str]:
+    """Extrae palabras clave de un texto, ignorando palabras comunes"""
+    return [p for p in texto.lower().strip().split() if p not in PALABRAS_IGNORAR and len(p) > 2]
+
+
+def normalizar_peso(peso) -> Optional[float]:
+    """Normaliza un valor de peso a float, retorna None si no es válido"""
+    if peso is None or peso == "ajustar" or peso == "peso corporal":
+        return None
+    if isinstance(peso, list):
+        validos = [p for p in peso if isinstance(p, (int, float))]
+        return max(validos) if validos else None
+    if isinstance(peso, (int, float)):
+        return float(peso)
+    if isinstance(peso, str):
+        try:
+            return float(peso)
+        except ValueError:
+            return None
+    return None
+
+
+def limpiar_json_ai(respuesta: str) -> str:
+    """Limpia una respuesta de AI que puede venir con markdown"""
+    if respuesta.startswith("```"):
+        respuesta = respuesta.split("```")[1]
+        if respuesta.startswith("json"):
+            respuesta = respuesta[4:]
+    return respuesta.strip()
 
 
 @app.get("/api/debug/pesos/{ejercicio}")
@@ -395,7 +463,7 @@ IMPORTANTE:
 - Empieza con compuestos pesados, termina con aislados"""
 
         completion = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": "Eres un entrenador experto. Solo respondes con JSON válido."},
                 {"role": "user", "content": prompt}
@@ -413,7 +481,6 @@ IMPORTANTE:
                 respuesta = respuesta[4:]
         respuesta = respuesta.strip()
 
-        import json
         rutina = json.loads(respuesta)
         rutina["id"] = f"{rutina['fecha']}-{rutina['tipo']}-{ObjectId()}"
         
@@ -423,7 +490,7 @@ IMPORTANTE:
             nombre = ejercicio.get("nombre", "")
             peso_sugerido = obtener_ultimo_peso(nombre, grupos)
             ejercicio["peso_kg"] = peso_sugerido
-            print(f"[GENERAR] {nombre} -> {peso_sugerido}")
+            logger.info(f"Rutina generada - {nombre} -> {peso_sugerido}")
 
         return {"rutina": rutina}
     except Exception as e:
@@ -442,13 +509,11 @@ def obtener_ultimo_peso(nombre_ejercicio: str, grupos_musculares: List[str]) -> 
     palabras_ignorar = {'de', 'con', 'en', 'la', 'el', 'las', 'los', 'a', 'y', 'o', 'para', 'al'}
     palabras_clave = [p for p in nombre_lower.split() if p not in palabras_ignorar and len(p) > 2]
     
-    print(f"[DEBUG] Buscando peso para: {nombre_ejercicio}")
-    print(f"[DEBUG] Palabras clave: {palabras_clave}")
-    print(f"[DEBUG] Grupos musculares: {grupos_musculares}")
+    logger.debug(f"Buscando peso para: {nombre_ejercicio} | Palabras: {palabras_clave} | Grupos: {grupos_musculares}")
     
     # Buscar en todos los entrenamientos recientes
     historial = list(collection.find({}).sort("fecha", -1).limit(30))
-    print(f"[DEBUG] Entrenamientos en historial: {len(historial)}")
+    logger.debug(f"Entrenamientos en historial: {len(historial)}")
     
     mejor_match = None
     mejor_score = 0
@@ -477,11 +542,11 @@ def obtener_ultimo_peso(nombre_ejercicio: str, grupos_musculares: List[str]) -> 
                             mejor_match = peso
     
     if mejor_match is not None:
-        print(f"[DEBUG] Match encontrado: {mejor_nombre} -> {mejor_match}kg (score: {mejor_score})")
+        logger.debug(f"Match encontrado: {mejor_nombre} -> {mejor_match}kg (score: {mejor_score})")
         return mejor_match
     
     # Si no encontró por nombre, buscar promedio por grupo muscular
-    print(f"[DEBUG] No match por nombre, buscando por grupo muscular...")
+    logger.debug(f"No match por nombre, buscando por grupo muscular...")
     pesos_grupo = []
     grupos_lower = [g.lower() for g in grupos_musculares]
     
@@ -499,10 +564,10 @@ def obtener_ultimo_peso(nombre_ejercicio: str, grupos_musculares: List[str]) -> 
     
     if pesos_grupo:
         promedio = round(sum(pesos_grupo) / len(pesos_grupo), 1)
-        print(f"[DEBUG] Promedio grupo muscular: {promedio}kg (de {len(pesos_grupo)} pesos)")
+        logger.debug(f"Promedio grupo muscular: {promedio}kg (de {len(pesos_grupo)} pesos)")
         return promedio
     
-    print(f"[DEBUG] No se encontró peso, retornando 'ajustar'")
+    logger.debug(f"No se encontró peso para '{nombre_ejercicio}', retornando 'ajustar'")
     return "ajustar"
 
 
@@ -1215,7 +1280,7 @@ def get_progreso_volumen():
     """Obtener volumen total por semana"""
     try:
         docs = list(collection.find({}).sort("fecha", 1))
-        print(f"[VOLUMEN] Documentos encontrados: {len(docs)}")
+        logger.debug(f"Volumen: {len(docs)} documentos encontrados")
         
         volumen_por_semana = {}
         
@@ -1241,7 +1306,7 @@ def get_progreso_volumen():
                         volumen_por_semana[semana_key]["series"] += int(series)
                     volumen_por_semana[semana_key]["ejercicios"] += 1
             except Exception as inner_e:
-                print(f"[VOLUMEN] Error procesando doc {fecha_str}: {inner_e}")
+                logger.warning(f"Volumen: error procesando doc {fecha_str}: {inner_e}")
                 continue
         
         # Convertir a lista ordenada
@@ -1250,10 +1315,10 @@ def get_progreso_volumen():
             for k, v in sorted(volumen_por_semana.items())
         ]
         
-        print(f"[VOLUMEN] Resultado: {len(resultado)} semanas")
+        logger.debug(f"Volumen: {len(resultado)} semanas calculadas")
         return {"volumen_semanal": resultado}
     except Exception as e:
-        print(f"[VOLUMEN] Error general: {e}")
+        logger.error(f"Error en get_progreso_volumen: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1513,7 +1578,7 @@ con un insight motivacional y una sugerencia práctica. Usa emojis. Sé directo 
 Responde en español de forma natural y motivadora:"""
 
         completion = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": "Eres un coach de fitness amigable y motivador. Respuestas cortas y directas."},
                 {"role": "user", "content": prompt}
@@ -1664,7 +1729,7 @@ Responde en español."""
         messages.append({"role": "user", "content": request.mensaje})
         
         completion = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=messages,
             temperature=0.7,
             max_tokens=3500,
@@ -1905,7 +1970,7 @@ Responde en español, sé amigable y usa emojis. Basa tus respuestas en los DATO
         
         # Primera llamada - puede pedir tools
         response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=messages,
             tools=OPENAI_TOOLS,
             tool_choice="auto",
@@ -1923,7 +1988,7 @@ Responde en español, sé amigable y usa emojis. Basa tus respuestas en los DATO
                 function_name = tool_call.function.name
                 arguments = json.loads(tool_call.function.arguments)
                 
-                print(f"[MCP] Ejecutando: {function_name}({arguments})")
+                logger.info(f"MCP ejecutando: {function_name}({arguments})")
                 
                 result = ejecutar_tool_call(function_name, arguments)
                 
@@ -1935,7 +2000,7 @@ Responde en español, sé amigable y usa emojis. Basa tus respuestas en los DATO
             
             # Segunda llamada con los resultados
             response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-5-mini",
                 messages=messages,
                 temperature=0.7,
                 max_tokens=3500,
@@ -1952,7 +2017,7 @@ Responde en español, sé amigable y usa emojis. Basa tus respuestas en los DATO
         }
         
     except Exception as e:
-        print(f"[MCP ERROR] {e}")
+        logger.error(f"Error en chat MCP: {e}")
         return {
             "respuesta": f"Error: {str(e)}",
             "tipo": "error"
@@ -2143,7 +2208,7 @@ Responde SOLO con un JSON válido (sin markdown):
 }}"""
 
         completion = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-5-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
             max_tokens=500,
@@ -2158,7 +2223,6 @@ Responde SOLO con un JSON válido (sin markdown):
                 respuesta_ai = respuesta_ai[4:]
         respuesta_ai = respuesta_ai.strip()
         
-        import json
         ejercicio_parseado = json.loads(respuesta_ai)
         
         # Normalizar nombre con nuestro diccionario

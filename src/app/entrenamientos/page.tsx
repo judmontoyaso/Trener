@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import WorkoutCard from '@/components/WorkoutCard';
 import Filters from '@/components/Filters';
+import LoadingScreen from '@/components/ui/LoadingScreen';
+import ErrorScreen from '@/components/ui/ErrorScreen';
 import { fetchEntrenamientos } from '@/lib/api';
-import { Entrenamiento } from '@/types';
-import { Search, Loader2 } from 'lucide-react';
+import type { Entrenamiento } from '@/types';
+import { Search } from 'lucide-react';
 
 export default function EntrenamientosPage() {
   const [entrenamientos, setEntrenamientos] = useState<Entrenamiento[]>([]);
@@ -45,30 +47,11 @@ export default function EntrenamientosPage() {
     .sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
   if (loading) {
-    return (
-      <>
-        <Navbar />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <Loader2 className="w-8 h-8 animate-spin text-gym-purple" />
-            <span className="ml-3 text-gray-400">Cargando entrenamientos...</span>
-          </div>
-        </main>
-      </>
-    );
+    return <LoadingScreen message="Cargando entrenamientos..." />;
   }
 
   if (error) {
-    return (
-      <>
-        <Navbar />
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="bg-red-500/20 border border-red-500/50 rounded-xl p-6 text-center">
-            <p className="text-red-300">{error}</p>
-          </div>
-        </main>
-      </>
-    );
+    return <ErrorScreen message={error} onRetry={() => window.location.reload()} />;
   }
 
   return (

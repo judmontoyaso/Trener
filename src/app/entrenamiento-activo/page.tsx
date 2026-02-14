@@ -4,6 +4,13 @@ import Navbar from '@/components/Navbar';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
+  fetchEntrenamientoActivo as apiFetchEntrenamientoActivo,
+  actualizarSerie as apiActualizarSerie,
+  completarEjercicioActivo as apiCompletarEjercicio,
+  finalizarEntrenamientoActivo as apiFinalizarEntrenamiento,
+  cancelarEntrenamientoActivo as apiCancelarEntrenamiento,
+} from '@/lib/api';
+import {
   Play,
   Pause,
   Check,
@@ -69,8 +76,6 @@ export default function EntrenamientoActivoPage() {
   const [enviarMatrix, setEnviarMatrix] = useState(true);
   const [resumenFinal, setResumenFinal] = useState<string | null>(null);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-
   useEffect(() => {
     cargarEntrenamiento();
   }, []);
@@ -92,8 +97,7 @@ export default function EntrenamientoActivoPage() {
 
   const cargarEntrenamiento = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/entrenamiento-activo`);
-      const data = await response.json();
+      const data = await apiFetchEntrenamientoActivo();
       
       console.log('Entrenamiento cargado:', data);
       
@@ -167,21 +171,17 @@ export default function EntrenamientoActivoPage() {
       const ejercicio = entrenamiento.ejercicios[ejercicioActual];
       const numeroSerie = ejercicio.series_realizadas.length + 1;
       
-      const response = await fetch(`${API_URL}/api/entrenamiento-activo/actualizar-serie`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ejercicio_index: ejercicioActual,
-          serie: {
-            numero: numeroSerie,
-            repeticiones: repsActuales,
-            peso_kg: pesoActual,
-            completada: true
-          }
-        }),
+      const result = await apiActualizarSerie({
+        ejercicio_index: ejercicioActual,
+        serie: {
+          numero: numeroSerie,
+          repeticiones: repsActuales,
+          peso_kg: pesoActual,
+          completada: true
+        }
       });
       
-      if (response.ok) {
+      if (result.success) {
         // Actualizar estado local
         const nuevoEntrenamiento = { ...entrenamiento };
         nuevoEntrenamiento.ejercicios[ejercicioActual].series_realizadas.push({
@@ -215,9 +215,7 @@ export default function EntrenamientoActivoPage() {
     if (!entrenamiento) return;
     
     try {
-      await fetch(`${API_URL}/api/entrenamiento-activo/completar-ejercicio/${index}`, {
-        method: 'PUT',
-      });
+      await apiCompletarEjercicio(index);
       
       const nuevoEntrenamiento = { ...entrenamiento };
       nuevoEntrenamiento.ejercicios[index].completado = true;
@@ -234,13 +232,7 @@ export default function EntrenamientoActivoPage() {
   const finalizarEntrenamiento = async () => {
     setFinalizando(true);
     try {
-      const response = await fetch(`${API_URL}/api/entrenamiento-activo/finalizar`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ enviar_matrix: enviarMatrix }),
-      });
-      
-      const data = await response.json();
+      const data = await apiFinalizarEntrenamiento(enviarMatrix);
       
       if (data.success) {
         setResumenFinal(data.resumen);
@@ -256,7 +248,7 @@ export default function EntrenamientoActivoPage() {
     if (!confirm('¿Seguro que deseas cancelar el entrenamiento? Se perderá el progreso.')) return;
     
     try {
-      await fetch(`${API_URL}/api/entrenamiento-activo/cancelar`, { method: 'DELETE' });
+      await apiCancelarEntrenamiento();
       router.push('/');
     } catch (error) {
       console.error('Error cancelando:', error);

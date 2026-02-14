@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Navbar from '@/components/Navbar';
 import { fetchEntrenamientos } from '@/lib/api';
-import { Entrenamiento } from '@/types';
+import type { Entrenamiento } from '@/types';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import {
   format,
