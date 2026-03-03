@@ -23,20 +23,32 @@ jobs:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Agregar host conocido
+        env:
+          SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
+          PORT="${SSH_PORT:-22}"
+          ssh-keyscan -p "$PORT" -H ${{ secrets.SSH_HOST }} >> ~/.ssh/known_hosts
 
       - name: Desplegar Backend
+        env:
+          SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
-          scp -r backend/*.py ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/Trener/backend/
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "pm2 restart trener-backend"
+          PORT="${SSH_PORT:-22}"
+          scp -P "$PORT" -r backend/*.py ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/Trener/backend/
+          ssh -p "$PORT" ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "pm2 restart trener-backend"
 
       - name: Desplegar Bot
+        env:
+          SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
-          scp bot-matrix/bot.js ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/matrix-bot/
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "pm2 restart matrix-bot"
+          PORT="${SSH_PORT:-22}"
+          scp -P "$PORT" bot-matrix/bot.js ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }}:/opt/matrix-bot/
+          ssh -p "$PORT" ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "pm2 restart matrix-bot"
 
       - name: Verificar servicios
+        env:
+          SSH_PORT: ${{ secrets.SSH_PORT }}
         run: |
-          ssh ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "pm2 status"
+          PORT="${SSH_PORT:-22}"
+          ssh -p "$PORT" ${{ secrets.SSH_USER }}@${{ secrets.SSH_HOST }} "pm2 status"
